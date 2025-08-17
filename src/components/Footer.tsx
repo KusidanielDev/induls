@@ -19,7 +19,6 @@ import {
 import {
   Facebook,
   Twitter,
-  Instagram,
   LinkedIn,
   YouTube,
   Article,
@@ -66,8 +65,6 @@ const Footer = () => {
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
-
-  const [openDesktop, setOpenDesktop] = React.useState(true);
 
   // Footer sections data
   const footerSections = [
@@ -431,8 +428,9 @@ const Footer = () => {
             variant="body2"
             sx={{ fontSize: "0.75rem", fontStyle: "italic" }}
           >
-            Disclaimer: IndusInd Bank Ltd ("Bank") does not operate/endorse any
-            channel on Telegram and does not authorise any person/s...
+            Disclaimer: IndusInd Bank Ltd (&quot;Bank&quot;) does not
+            operate/endorse any channel on Telegram and does not authorise any
+            person/s...
           </Typography>
         </Box>
 
@@ -529,8 +527,8 @@ const Footer = () => {
               Tel: 020-26343201/ 020-69019000 CIN:L65191PN1994PLC076333.
             </Typography>
             <Typography variant="body2">
-              For any Shareholder's queries or grievances contact Bipin Bihari
-              at investor@indusind.com
+              For any Shareholders queries or grievances contact Bipin Bihari at
+              investor@indusind.com
             </Typography>
           </Grid>
 

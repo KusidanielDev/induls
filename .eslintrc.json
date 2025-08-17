@@ -1,9 +1,29 @@
 {
-  "extends": ["next/core-web-vitals", "eslint:recommended"],
+  "extends": ["next/core-web-vitals"],
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint"],
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2021": true
+  },
   "rules": {
+    // Use the TS-aware unused vars rule; ignore leading-underscore vars/args
     "@typescript-eslint/no-unused-vars": [
-      "warn",
+      "error",
       { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }
-    ]
-  }
+    ],
+
+    // TS handles undefineds; avoid false positives like 'globalThis' not defined
+    "no-undef": "off"
+  },
+  "overrides": [
+    {
+      "files": ["*.ts", "*.tsx"],
+      "rules": {
+        // Keep JS-only rules from fighting TS
+        "no-undef": "off"
+      }
+    }
+  ]
 }

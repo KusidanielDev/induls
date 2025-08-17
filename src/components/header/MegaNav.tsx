@@ -29,12 +29,17 @@ import { NAV_SECTIONS, type MegaSection } from "@/data/megaNav";
 
 const BRAND = "#98272A";
 
-function Tag({ text, color = "success" as "success" | "warning" | "info" }) {
-  const palette = {
-    success: { bg: "rgba(16,185,129,.12)", fg: "#10b981" },
-    warning: { bg: "rgba(245,158,11,.12)", fg: "#f59e0b" },
-    info: { bg: "rgba(59,130,246,.12)", fg: "#3b82f6" },
-  }[color];
+type TagColor = "success" | "warning" | "info";
+type TagProps = { text: string; color?: TagColor };
+
+const TAG_PALETTE: Record<TagColor, { bg: string; fg: string }> = {
+  success: { bg: "rgba(16,185,129,.12)", fg: "#10b981" },
+  warning: { bg: "rgba(245,158,11,.12)", fg: "#f59e0b" },
+  info: { bg: "rgba(59,130,246,.12)", fg: "#3b82f6" },
+};
+
+function Tag({ text, color = "success" }: TagProps) {
+  const palette = TAG_PALETTE[color];
   return (
     <Chip
       label={text}
@@ -120,7 +125,7 @@ function MegaPanel({
                         {item.tag && (
                           <Tag
                             text={item.tag.text}
-                            color={item.tag.color as any}
+                            color={(item.tag.color as TagColor) ?? "success"}
                           />
                         )}
                       </Stack>

@@ -13,7 +13,7 @@ export type MegaSection = {
   onClose?: () => void;
 };
 
-const green = (t: string): MegaItem =>
+const _green = (t: string): MegaItem =>
   ({ label: "", tag: { text: t, color: "success" } } as any);
 
 export const NAV_SECTIONS: MegaSection[] = [

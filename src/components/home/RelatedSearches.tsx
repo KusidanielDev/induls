@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Box, Grid, Button, Container, Typography } from "@mui/material";
+import { Grid, Button, Container, Typography } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 
 const TERMS = [

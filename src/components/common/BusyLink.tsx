@@ -10,7 +10,7 @@ export default function BusyLink({ children, ...props }: Props) {
   return (
     <Link
       {...props}
-      onClick={(e) => {
+      onClick={(_e) => {
         setBusy(true);
         // let Next.js handle navigation; overlay will auto-hide via RouteSpinner timeout
       }}
