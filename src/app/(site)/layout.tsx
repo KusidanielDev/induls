@@ -3,7 +3,8 @@
 import * as React from "react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-
+import BusyOverlay from "@/components/common/BusyOverlay";
+import { BusyProvider, BusyContext } from "@/contexts/Busy";
 import ChatWidget from "@/components/common/ChatWidget";
 
 export default function SiteLayout({
@@ -12,11 +13,17 @@ export default function SiteLayout({
   children: React.ReactNode;
 }) {
   return (
-    <>
+    <BusyProvider>
       <Header />
+      <BusyConsumerOverlay />
       <main>{children}</main>
       <Footer />
       <ChatWidget />
-    </>
+    </BusyProvider>
   );
+}
+
+function BusyConsumerOverlay() {
+  const { busy } = React.useContext(BusyContext);
+  return <BusyOverlay open={busy} label="Loading..." />;
 }

@@ -1,64 +1,57 @@
+// src/components/dashboard/TxnRow.tsx
 "use client";
 import * as React from "react";
-import { Box, Typography, Chip } from "@mui/material";
-import ArrowOutwardIcon from "@mui/icons-material/ArrowOutward";
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
-import { formatINR, formatDate } from "@/lib/format";
+import { Box, Typography } from "@mui/material";
 
-type Txn = {
-  id: string;
-  type: "DEBIT" | "CREDIT";
-  description: string;
-  amount: number; // already mapped to amountCents in /api/me
-  createdAt: string; // mapped from postedAt in /api/me
-};
+export default function TxnRow({ txn }: { txn: any }) {
+  const isCredit = txn.type === "CREDIT";
+  const amountCents =
+    typeof txn.amountCents === "number"
+      ? txn.amountCents
+      : typeof txn.amount === "number"
+      ? txn.amount
+      : 0;
 
-export default function TxnRow({ txn }: { txn: Txn }) {
-  const isDebit = txn.type === "DEBIT";
+  const amountStr = `₹ ${(amountCents / 100).toLocaleString("en-IN")}`;
+  const when = txn.postedAt
+    ? new Date(txn.postedAt).toLocaleString()
+    : txn.createdAt
+    ? new Date(txn.createdAt).toLocaleString()
+    : "";
+
+  const accountLabel = txn.accountNumber
+    ? `${txn.accountType ?? ""} • ${txn.accountNumber}`
+    : "";
+
   return (
     <Box
       sx={{
-        display: "grid",
-        gridTemplateColumns: "32px 1fr auto",
+        py: 1,
+        display: "flex",
         alignItems: "center",
-        gap: 1.5,
-        py: 1.25,
-        borderBottom: "1px solid #f1f5f9",
+        justifyContent: "space-between",
+        borderBottom: "1px solid #eee",
       }}
     >
-      <Box
+      <Box sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontWeight: 600 }} noWrap>
+          {txn.description || (isCredit ? "Credit" : "Debit")}
+        </Typography>
+        <Typography variant="caption" sx={{ color: "#6b7280" }} noWrap>
+          {when} {accountLabel ? `• ${accountLabel}` : ""}
+        </Typography>
+      </Box>
+      <Typography
         sx={{
-          width: 32,
-          height: 32,
-          borderRadius: "50%",
-          bgcolor: "#f3f4f6",
-          display: "grid",
-          placeItems: "center",
+          fontWeight: 700,
+          color: isCredit ? "green" : "inherit",
+          ml: 2,
+          whiteSpace: "nowrap",
         }}
       >
-        {isDebit ? (
-          <ArrowOutwardIcon fontSize="small" />
-        ) : (
-          <ArrowDownwardIcon fontSize="small" />
-        )}
-      </Box>
-      <Box sx={{ minWidth: 0 }}>
-        <Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>
-          {txn.description || (isDebit ? "Debit" : "Credit")}
-        </Typography>
-        <Typography variant="caption" sx={{ color: "#6b7280" }}>
-          {formatDate(txn.createdAt)}
-        </Typography>
-      </Box>
-      <Chip
-        size="small"
-        label={(isDebit ? "− " : "+ ") + formatINR(txn.amount)}
-        sx={{
-          bgcolor: isDebit ? "#fef2f2" : "#ecfdf5",
-          color: isDebit ? "#b91c1c" : "#065f46",
-          fontWeight: 700,
-        }}
-      />
+        {isCredit ? "+" : "-"}
+        {amountStr}
+      </Typography>
     </Box>
   );
 }

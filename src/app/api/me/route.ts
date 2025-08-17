@@ -1,45 +1,46 @@
 // src/app/api/me/route.ts
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/auth";
 
 export async function GET() {
-  const session = await getServerSession(authOptions as any);
-  if (!session?.user?.email) {
+  try {
+    const { userId } = await requireUser();
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, createdAt: true },
+    });
+    if (!user) return NextResponse.json({ user: null }, { status: 404 });
+
+    const accounts = await prisma.account.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const txns = await prisma.transaction.findMany({
+      where: { userId },
+      orderBy: { postedAt: "desc" },
+      take: 20,
+      include: { account: { select: { number: true, type: true } } },
+    });
+
+    // IMPORTANT: expose `amountCents` and `postedAt`
+    const txnsForUi = txns.map((t) => ({
+      id: t.id,
+      type: t.type, // "DEBIT" | "CREDIT"
+      description: t.description ?? (t.type === "DEBIT" ? "Debit" : "Credit"),
+      amountCents: t.amountCents,
+      postedAt: t.postedAt,
+      accountId: t.accountId,
+      accountNumber: t.account?.number,
+      accountType: t.account?.type,
+    }));
+
+    return NextResponse.json({ user, accounts, txns: txnsForUi });
+  } catch {
     return NextResponse.json({ user: null }, { status: 401 });
   }
-
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email! },
-  });
-  if (!user) return NextResponse.json({ user: null }, { status: 404 });
-
-  const accounts = await prisma.account.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "asc" },
-  });
-
-  // Your schema uses `amountCents` and `postedAt` and requires `userId`
-  const txns = await prisma.transaction.findMany({
-    where: { userId: user.id },
-    orderBy: { postedAt: "desc" },
-    take: 15,
-  });
-
-  // Map to what the dashboard expects
-  const txnsForUi = txns.map((t) => ({
-    id: t.id,
-    type: t.type,
-    description: t.description ?? "",
-    amount: t.amountCents, // UI divides by 100
-    createdAt: t.postedAt, // UI called this createdAt before
-    accountId: t.accountId,
-  }));
-
-  return NextResponse.json({
-    user: { id: user.id, email: user.email, name: user.name },
-    accounts,
-    txns: txnsForUi,
-  });
 }

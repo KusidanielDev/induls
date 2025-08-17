@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import ChatWidget from "@/components/common/ChatWidget";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   AppBar,
   Toolbar,
@@ -33,14 +33,18 @@ import {
 } from "@mui/icons-material";
 import { signOut } from "next-auth/react";
 import { BalanceVisibilityProvider } from "@/contexts/BalanceVisibility";
-import BusyOverlay from "@/components/common/BusyOverlay";
 import SecureFooter from "@/components/secure/SecureFooter";
+import RouteSpinner from "@/components/common/RouteSpinner";
+import BusyOverlay from "@/components/common/BusyOverlay";
+import { BusyProvider, BusyContext } from "@/contexts/Busy";
+import SavingsIcon from "@mui/icons-material/Savings";
 
 const DRAWER_WIDTH = 240;
 
 const MENU = [
   { label: "Dashboard", icon: <DashboardIcon />, href: "/dashboard" },
   { label: "Accounts", icon: <AccountBalance />, href: "/accounts" },
+  { label: "Deposit", icon: <SavingsIcon />, href: "/deposit" },
   { label: "Payments", icon: <Payment />, href: "/payments" },
   { label: "Transfers", icon: <CompareArrows />, href: "/transfers" },
   { label: "Statements", icon: <Receipt />, href: "/statements" },
@@ -50,6 +54,11 @@ const MENU = [
   { label: "Settings", icon: <Settings />, href: "/settings" },
 ];
 
+// Chat on secure pages (client-only)
+const ChatWidget = dynamic(() => import("@/components/common/ChatWidget"), {
+  ssr: false,
+});
+
 export default function SecureLayout({
   children,
 }: {
@@ -57,15 +66,11 @@ export default function SecureLayout({
 }) {
   const mdUp = useMediaQuery("(min-width:900px)");
   const pathname = usePathname();
-  const router = useRouter();
-  const [mobileOpen, setMobileOpen] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
 
-  // Clear busy when the route actually changes
-  React.useEffect(() => {
-    setBusy(false);
-    setMobileOpen(false);
-  }, [pathname]);
+  const title =
+    MENU.find((m) => pathname?.startsWith(m.href))?.label ??
+    "IndusInd NetBanking";
 
   const drawer = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -74,28 +79,24 @@ export default function SecureLayout({
       </Box>
       <Divider />
       <List sx={{ py: 0 }}>
-        {MENU.map((m) => {
-          const active = pathname === m.href;
-          return (
-            <ListItemButton
-              key={m.label}
-              component={Link}
-              href={m.href}
-              prefetch
-              onClick={() => setBusy(true)}
-              selected={active}
-              sx={{
-                borderBottom: "1px solid #f1f5f9",
-                "&.Mui-selected": { bgcolor: "#f9fafb" },
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: 36, color: "#374151" }}>
-                {m.icon}
-              </ListItemIcon>
-              <ListItemText primary={m.label} />
-            </ListItemButton>
-          );
-        })}
+        {MENU.map((m) => (
+          <ListItemButton
+            key={m.href}
+            component={Link}
+            href={m.href}
+            prefetch
+            onClick={() => setDrawerOpen(false)}
+            sx={{
+              borderBottom: "1px solid #f1f5f9",
+              bgcolor: pathname?.startsWith(m.href) ? "#f8fafc" : "transparent",
+            }}
+          >
+            <ListItemIcon sx={{ minWidth: 36, color: "#374151" }}>
+              {m.icon}
+            </ListItemIcon>
+            <ListItemText primary={m.label} />
+          </ListItemButton>
+        ))}
       </List>
       <Box sx={{ mt: "auto" }}>
         <Divider />
@@ -111,88 +112,102 @@ export default function SecureLayout({
     </Box>
   );
 
-  const title =
-    MENU.find((m) => m.href === pathname)?.label ?? "IndusInd NetBanking";
+  function BusyConsumerOverlay() {
+    const { busy } = React.useContext(BusyContext);
+    return <BusyOverlay open={busy} label="Loading..." />;
+  }
 
   return (
     <BalanceVisibilityProvider>
-      <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "#f5f7fa" }}>
-        <BusyOverlay open={busy} label="Loading..." />
+      <BusyProvider>
+        {/* tiny line loader on route change */}
+        <RouteSpinner />
+        <BusyConsumerOverlay />
 
-        {/* AppBar */}
-        <AppBar
-          position="fixed"
-          sx={{
-            width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
-            ml: { md: `${DRAWER_WIDTH}px` },
-            bgcolor: "#98272A",
-          }}
-        >
-          <Toolbar>
-            <IconButton
-              color="inherit"
-              edge="start"
-              onClick={() => setMobileOpen((v) => !v)}
-              sx={{ mr: 2, display: { md: "none" } }}
+        <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "#f5f7fa" }}>
+          {/* Top AppBar */}
+          <AppBar
+            position="fixed"
+            sx={{
+              width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
+              ml: { md: `${DRAWER_WIDTH}px` },
+              bgcolor: "#98272A",
+            }}
+          >
+            <Toolbar>
+              <IconButton
+                color="inherit"
+                edge="start"
+                onClick={() => setDrawerOpen(true)}
+                sx={{ mr: 2, display: { md: "none" } }}
+                aria-label="open menu"
+              >
+                <MenuIcon />
+              </IconButton>
+              <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>
+                {title}
+              </Typography>
+            </Toolbar>
+          </AppBar>
+
+          {/* Drawer */}
+          {mdUp ? (
+            <Drawer
+              variant="permanent"
+              open
+              sx={{
+                "& .MuiDrawer-paper": {
+                  width: DRAWER_WIDTH,
+                  boxSizing: "border-box",
+                  borderRight: "1px solid #e5e7eb",
+                },
+              }}
             >
-              <MenuIcon />
-            </IconButton>
-            <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>
-              {title}
-            </Typography>
-          </Toolbar>
-        </AppBar>
+              {drawer}
+            </Drawer>
+          ) : (
+            <Drawer
+              variant="temporary"
+              open={drawerOpen}
+              onClose={() => setDrawerOpen(false)}
+              ModalProps={{ keepMounted: true }}
+              sx={{
+                "& .MuiDrawer-paper": {
+                  width: DRAWER_WIDTH,
+                  boxSizing: "border-box",
+                },
+              }}
+            >
+              {drawer}
+            </Drawer>
+          )}
 
-        {/* Drawer */}
-        {mdUp ? (
-          <Drawer
-            variant="permanent"
-            open
+          {/* Main content (no overlap on desktop) */}
+          <Box
             sx={{
-              "& .MuiDrawer-paper": {
-                width: DRAWER_WIDTH,
-                boxSizing: "border-box",
-                borderRight: "1px solid #e5e7eb",
-              },
+              flexGrow: 1,
+              display: "flex",
+              flexDirection: "column",
+              minHeight: "100vh",
+              ml: { md: `${DRAWER_WIDTH}px` }, // <-- critical: stops overlap
             }}
           >
-            {drawer}
-          </Drawer>
-        ) : (
-          <Drawer
-            variant="temporary"
-            open={mobileOpen}
-            onClose={() => setMobileOpen(false)}
-            ModalProps={{ keepMounted: true }}
-            sx={{
-              "& .MuiDrawer-paper": {
-                width: DRAWER_WIDTH,
-                boxSizing: "border-box",
-              },
-            }}
-          >
-            {drawer}
-          </Drawer>
-        )}
+            {/* push below AppBar */}
+            <Toolbar />
 
-        {/* Main */}
-        <Box
-          component="main"
-          sx={{
-            flexGrow: 1,
-            pt: 8, // leave space for AppBar
-            px: { xs: 2, md: 3 },
-            ml: { md: `${DRAWER_WIDTH}px` }, // leave space for permanent Drawer
-            display: "flex",
-            flexDirection: "column",
-            minHeight: "100vh",
-          }}
-        >
-          <Box sx={{ flex: 1, width: "100%" }}>{children}</Box>
-          <SecureFooter />
+            {/* page content */}
+            <Box sx={{ flex: 1, px: { xs: 2, md: 3 }, py: { xs: 2, md: 3 } }}>
+              {children}
+            </Box>
+
+            {/* footer pinned to bottom */}
+            <SecureFooter />
+          </Box>
         </Box>
-      </Box>
-      <ChatWidget />
+
+        {/* floating chat */}
+        <ChatWidget />
+      </BusyProvider>
     </BalanceVisibilityProvider>
   );
 }

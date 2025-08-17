@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import BusyLink from "@/components/common/BusyLink";
 import Link from "next/link";
 import {
   Box,
@@ -470,7 +471,10 @@ export default function MegaNav() {
             </Tooltip>
           )}
           <Link href="/" style={{ textDecoration: "none" }}>
-            <Box
+            <Typography
+              component={BusyLink}
+              href="/"
+              variant="h6"
               sx={{
                 fontWeight: 900,
                 color: BRAND,
@@ -481,7 +485,7 @@ export default function MegaNav() {
               }}
             >
               IndusInd Bank
-            </Box>
+            </Typography>
           </Link>
         </Stack>
 
