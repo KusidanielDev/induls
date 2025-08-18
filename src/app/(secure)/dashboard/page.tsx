@@ -34,7 +34,11 @@ function mask(amountCents: number, show: boolean) {
 
 export default function DashboardPage() {
   const { visible, toggle } = React.useContext(BalanceVisibilityContext);
-  const { data } = useSWR("/api/me", fetcher);
+  const { data /*, error*/ } = useSWR("/api/me", fetcher, {
+    revalidateOnFocus: false, // 👈 prevents flicker when switching tabs
+  });
+  const loading = !data; // 👈 treat as loading until the first response arrives
+
   const user = data?.user;
   const accounts = data?.accounts ?? [];
   const txns = data?.txns ?? [];
@@ -143,6 +147,7 @@ export default function DashboardPage() {
                 Manage
               </Button>
             </Box>
+
             <Grid container spacing={1}>
               {accounts.map((a: any) => (
                 <Grid key={a.id} item xs={12} sm={6}>
@@ -164,11 +169,12 @@ export default function DashboardPage() {
                   </Paper>
                 </Grid>
               ))}
-              {accounts.length === 0 && (
+
+              {/* 👇 show empty state only when NOT loading */}
+              {!loading && accounts.length === 0 && (
                 <Grid item xs={12}>
                   <Typography variant="body2" sx={{ color: "#6b7280" }}>
-                    No accounts yet. (Dev tip: POST{" "}
-                    <code>/api/dev/backfill</code> while signed in.)
+                    No accounts yet.
                   </Typography>
                 </Grid>
               )}
@@ -248,42 +254,48 @@ export default function DashboardPage() {
             <Typography variant="h6" sx={{ fontWeight: 800, mb: 1 }}>
               Recent Activity
             </Typography>
-            {txns.length === 0 && (
+
+            {/* 👇 Only show this when NOT loading */}
+            {!loading && txns.length === 0 && (
               <Typography variant="body2" sx={{ color: "#6b7280" }}>
                 No transactions yet.
               </Typography>
             )}
-            {txns.slice(0, 8).map((t: any, idx: number) => (
-              <Box key={t.id ?? idx}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    py: 1,
-                  }}
-                >
-                  <Box>
-                    <Typography sx={{ fontWeight: 600 }}>
-                      {t.description || "Transaction"}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: "#6b7280" }}>
-                      {new Date(t.postedAt).toLocaleString()}
-                    </Typography>
-                  </Box>
-                  <Typography
+
+            {/* 👇 Only render rows when NOT loading */}
+            {!loading &&
+              txns.slice(0, 8).map((t: any, idx: number) => (
+                <Box key={t.id ?? idx}>
+                  <Box
                     sx={{
-                      fontWeight: 800,
-                      color: t.type === "CREDIT" ? "green" : "inherit",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      py: 1,
                     }}
                   >
-                    {t.type === "CREDIT" ? "+" : "-"}{" "}
-                    {mask(t.amountCents, visible)}
-                  </Typography>
+                    <Box>
+                      <Typography sx={{ fontWeight: 600 }}>
+                        {t.description || "Transaction"}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: "#6b7280" }}>
+                        {/* If this ever causes hydration warnings, wrap span with suppressHydrationWarning */}
+                        {new Date(t.postedAt).toLocaleString()}
+                      </Typography>
+                    </Box>
+                    <Typography
+                      sx={{
+                        fontWeight: 800,
+                        color: t.type === "CREDIT" ? "green" : "inherit",
+                      }}
+                    >
+                      {t.type === "CREDIT" ? "+" : "-"}{" "}
+                      {mask(t.amountCents, visible)}
+                    </Typography>
+                  </Box>
+                  {idx < Math.min(txns.length, 8) - 1 && <Divider />}
                 </Box>
-                {idx < Math.min(txns.length, 8) - 1 && <Divider />}
-              </Box>
-            ))}
+              ))}
           </Paper>
 
           <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
