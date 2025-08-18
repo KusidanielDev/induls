@@ -3,7 +3,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import dynamic from "next/dynamic";
 import {
   AppBar,
   Toolbar,
@@ -53,11 +52,6 @@ const MENU = [
   { label: "Offers", icon: <LocalOffer />, href: "/offers" },
   { label: "Settings", icon: <Settings />, href: "/settings" },
 ];
-
-// Chat on secure pages (client-only)
-const ChatWidget = dynamic(() => import("@/components/common/ChatWidget"), {
-  ssr: false,
-});
 
 export default function SecureLayout({
   children,
@@ -206,7 +200,6 @@ export default function SecureLayout({
         </Box>
 
         {/* floating chat */}
-        <ChatWidget />
       </BusyProvider>
     </BalanceVisibilityProvider>
   );

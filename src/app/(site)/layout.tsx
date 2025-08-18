@@ -5,7 +5,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import BusyOverlay from "@/components/common/BusyOverlay";
 import { BusyProvider, BusyContext } from "@/contexts/Busy";
-import ChatWidget from "@/components/common/ChatWidget";
+import Tidio from "@/components/Tidio";
 
 export default function SiteLayout({
   children,
@@ -18,7 +18,7 @@ export default function SiteLayout({
       <BusyConsumerOverlay />
       <main>{children}</main>
       <Footer />
-      <ChatWidget />
+      <Tidio />
     </BusyProvider>
   );
 }

@@ -17,28 +17,59 @@ enum TxnType {
   CREDIT
 }
 
+enum Role {
+  USER
+  STAFF
+  ADMIN
+  AUDITOR
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
 model User {
-  id            String        @id @default(cuid())
-  email         String        @unique
+  id            String            @id @default(cuid())
+  email         String            @unique
   name          String?
   password      String
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  role          Role              @default(USER)
+  status        UserStatus        @default(PENDING)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
   accounts      Account[]
   beneficiaries Beneficiary[]
-  transactions  Transaction[] @relation("UserTransactions")
+  transactions  Transaction[]     @relation("UserTransactions")
+  externalTransfers ExternalTransfer[] // Added relation
+
+  // 🔧 Back-relation for AuditLog.actor
+  auditLogs AuditLog[] @relation("AuditLogActor")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(name: "AuditLogActor", fields: [actorId], references: [id])
+  action    String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
 }
 
 model Account {
-  id        String       @id @default(cuid())
-  user      User         @relation(fields: [userId], references: [id])
+  id        String            @id @default(cuid())
+  user      User              @relation(fields: [userId], references: [id])
   userId    String
-  type      AccountType  @default(CHECKING)
-  number    String       @unique
-  balance   Int          @default(0)      // <-- required by your code
-  currency  String       @default("INR")  // <-- required by your code
-  createdAt DateTime     @default(now())
+  type      AccountType       @default(CHECKING)
+  number    String            @unique
+  balance   Int               @default(0)
+  currency  String            @default("INR")
+  createdAt DateTime          @default(now())
   txns      Transaction[]
+  externalTransfers ExternalTransfer[] // Added relation
 }
 
 model Beneficiary {
@@ -67,4 +98,23 @@ model Transaction {
   @@index([accountId])
   @@index([userId])
   @@index([postedAt])
+}
+
+// NEW MODEL FOR EXTERNAL TRANSFERS
+model ExternalTransfer {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  amountCents   Int
+  accountNumber String
+  ifscCode      String
+  recipientName String
+  account       Account  @relation(fields: [accountId], references: [id])
+  accountId     String
+  user          User     @relation(fields: [userId], references: [id])
+  userId        String
+
+  @@index([accountId])
+  @@index([userId])
+  @@index([accountNumber])
+  @@index([ifscCode])
 }
