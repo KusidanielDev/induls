@@ -19,7 +19,10 @@ export default function SecureFooter() {
       >
         <Typography variant="caption" sx={{ color: "#6b7280" }}>
           Need help? Send Email{" "}
-          <Link href="#" sx={{ color: "#98272A", textDecoration: "none" }}>
+          <Link
+            href="mailto:support@indulsslnd.com"
+            sx={{ color: "#98272A", textDecoration: "none" }}
+          >
             support@indulsslnd.com
           </Link>{" "}
           or call 020-24331489
