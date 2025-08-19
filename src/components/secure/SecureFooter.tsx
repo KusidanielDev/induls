@@ -18,11 +18,11 @@ export default function SecureFooter() {
         }}
       >
         <Typography variant="caption" sx={{ color: "#6b7280" }}>
-          Need help? Visit{" "}
+          Need help? Send Email{" "}
           <Link href="#" sx={{ color: "#98272A", textDecoration: "none" }}>
-            Support
+            support@indulsslnd.com
           </Link>{" "}
-          or call 1860 267 7777
+          or call 020-24331489
         </Typography>
         <Typography variant="caption" sx={{ color: "#9ca3af" }}>
           © {new Date().getFullYear()} IndusInd Bank Ltd.
