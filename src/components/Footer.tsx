@@ -524,7 +524,7 @@ const Footer = () => {
               Pune-411 001, India.
             </Typography>
             <Typography variant="body2">
-              Tel: 020-26343201/ 020-69019000 CIN:L65191PN1994PLC076333.
+              Tel: 020-24331489/ 020-22851212 CIN:L35191PN1994PLA076333.
             </Typography>
             <Typography variant="body2">
               For any Shareholders queries or grievances contact Bipin Bihari at
@@ -549,7 +549,9 @@ const Footer = () => {
                 Bull
               </Typography>
             </Box>
-            <Typography variant="body2">Footer Bull - IndusInd-Bank</Typography>
+            <Typography variant="body2">
+              Footer Bull - Indusslnd-Bank
+            </Typography>
           </Grid>
         </Grid>
 

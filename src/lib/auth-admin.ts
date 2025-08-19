@@ -1,13 +1,12 @@
 import type { NextAuthOptions } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { prisma } from "@/lib/prisma";
 
 export const adminAuthOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: { signIn: "/admin/login" },
   secret: process.env.NEXTAUTH_SECRET_ADMIN ?? process.env.NEXTAUTH_SECRET,
-  // separate cookies so admin session can coexist with user session
   cookies: {
     sessionToken: {
       name:
@@ -43,13 +42,12 @@ export const adminAuthOptions: NextAuthOptions = {
       },
       async authorize(creds) {
         if (!creds?.email || !creds?.password) return null;
-        const user = await prisma.user.findUnique({
-          where: { email: creds.email },
-        });
+        const email = creds.email.toLowerCase().trim();
+        const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return null;
         const ok = await bcrypt.compare(creds.password, user.password);
         if (!ok) return null;
-        // Only allow ACTIVE ADMIN/STAFF to log into admin auth
+        // Only ACTIVE ADMIN/STAFF
         if (!["ADMIN", "STAFF"].includes(user.role) || user.status !== "ACTIVE")
           return null;
         return {
@@ -72,7 +70,7 @@ export const adminAuthOptions: NextAuthOptions = {
       return token;
     },
     async session({ session, token }) {
-      (session.user as any).id = (token as any).uid as string;
+      (session.user as any).id = (token as any).uid;
       (session.user as any).role = (token as any).role;
       (session.user as any).status = (token as any).status;
       return session;

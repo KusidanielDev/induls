@@ -1,18 +1,46 @@
-import { headers } from "next/headers";
+"use client";
 
-async function getAdminCsrfToken() {
-  const hdrs = headers();
-  const host = hdrs.get("x-forwarded-host") || hdrs.get("host");
-  const proto = hdrs.get("x-forwarded-proto") || "http";
-  const res = await fetch(`${proto}://${host}/api/admin/auth/csrf`, {
-    cache: "no-store",
-  });
-  const data = await res.json();
-  return data.csrfToken as string;
-}
+import { useEffect, useState } from "react";
 
-export default async function AdminLoginPage() {
-  const csrfToken = await getAdminCsrfToken();
+export default function AdminLogin() {
+  const [csrf, setCsrf] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/admin/auth/csrf", { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`CSRF HTTP ${r.status}`);
+        const data = await r.json();
+        if (alive) setCsrf(data.csrfToken);
+      })
+      .catch((e) => setError(e.message));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (error) {
+    return (
+      <div className="mx-auto mt-20 max-w-sm rounded-2xl border bg-white p-6">
+        <h1 className="mb-4 text-xl font-semibold">Admin Sign in</h1>
+        <p className="text-sm text-red-600">
+          Failed to load security token: {error}. Check{" "}
+          <code>/api/admin/auth/csrf</code> route.
+        </p>
+      </div>
+    );
+  }
+
+  if (!csrf) {
+    return (
+      <div className="mx-auto mt-20 max-w-sm rounded-2xl border bg-white p-6">
+        <h1 className="mb-4 text-xl font-semibold">Admin Sign in</h1>
+        <p className="text-sm text-gray-600">Loading…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto mt-20 max-w-sm rounded-2xl border bg-white p-6">
       <h1 className="mb-4 text-xl font-semibold">Admin Sign in</h1>
@@ -21,7 +49,7 @@ export default async function AdminLoginPage() {
         action="/api/admin/auth/callback/credentials"
         className="space-y-3"
       >
-        <input type="hidden" name="csrfToken" value={csrfToken} />
+        <input type="hidden" name="csrfToken" value={csrf} />
         <input
           className="w-full rounded border p-2"
           name="email"
