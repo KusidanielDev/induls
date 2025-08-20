@@ -27,9 +27,7 @@ export default function AdminLayout({
           <a href="/admin">Dashboard</a>
           <a href="/admin/users">Users</a>
           <a href="/admin/transactions">Transactions</a>
-          <a href="/api/admin/auth/signout?callbackUrl=/admin/login">
-            Sign out
-          </a>
+          <a href="/api/auth/signout?callbackUrl=/login">Sign out</a>
         </nav>
       </header>
       <main style={{ maxWidth: 1200, margin: "0 auto", padding: 16 }}>

@@ -10,13 +10,18 @@ function rand(n = 12) {
 
 export async function POST(req: Request) {
   try {
-    const {
-      email,
-      name,
-      password,
-      accountType = "SAVINGS",
-      accountNumber,
-    } = await req.json();
+    const body = await req.json();
+
+    // 🔒 Normalize inputs
+    const email = String(body.email || "")
+      .trim()
+      .toLowerCase();
+    const name = (body.name?.toString().trim() || null) as string | null;
+    const password = String(body.password || "");
+    const accountType = (body.accountType || "SAVINGS") as
+      | "CHECKING"
+      | "SAVINGS";
+    const accountNumber = body.accountNumber?.toString().trim() || undefined;
 
     if (!email || !password) {
       return NextResponse.json(
@@ -25,26 +30,31 @@ export async function POST(req: Request) {
       );
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing)
+    // 🚫 Duplicate email check (case-insensitive)
+    const existing = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
+    });
+    if (existing) {
       return NextResponse.json(
         { error: "Email already in use" },
         { status: 409 }
       );
+    }
 
     const hashed = await bcrypt.hash(password, 12);
 
     const user = await prisma.user.create({
       data: {
-        email,
+        email, // ✅ normalized
         name,
-        password: hashed,
+        password: hashed, // ✅ bcrypt hash
+        // status defaults to PENDING in your Prisma schema
         accounts: {
           create: [
             {
               type: accountType,
               number: accountNumber || rand(12),
-              balance: 150000, // ₹1,500.00 (stored as paise/cent in your schema)
+              balance: 150000,
               currency: "INR",
             },
           ],

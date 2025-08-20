@@ -3,65 +3,14 @@ import type { NextAuthOptions } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { getServerSession } from "next-auth";
-import type { Role, UserStatus } from "@prisma/client";
-import { prisma } from "./prisma";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 
-// ⬇️ bring in the separate admin auth options (for /api/admin/auth/*)
-import { adminAuthOptions } from "@/lib/auth-admin";
-
-// ---------- Helpers ----------
-export async function requireSession() {
-  // be explicit with options so we read the right cookies
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) throw new Error("Unauthorized");
-  const user = await prisma.user.findUnique({ where: { id: session.user.id } });
-  if (!user) throw new Error("Unauthorized");
-  return user;
+export function isAdminOrStaff(role?: string | null) {
+  return role === "ADMIN" || role === "STAFF";
 }
 
-export function isAdminOrStaff(role?: Role) {
-  return !!role && (role === "ADMIN" || role === "STAFF");
-}
-
-export function ensureActive(status: UserStatus) {
-  if (status !== "ACTIVE") throw new Error("Account not active");
-}
-
-/**
- * Accepts either:
- * - the regular user session (default NextAuth cookie), or
- * - the dedicated admin session (separate cookie/secret)
- */
-export async function requireAdmin() {
-  // 1) try the regular session first
-  let session = await getServerSession(authOptions);
-
-  // 2) if not logged in there, try the admin session
-  if (!session?.user?.id) {
-    session = await getServerSession(adminAuthOptions);
-  }
-
-  const uid = session?.user?.id;
-  if (!uid) throw new Error("Unauthorized");
-
-  const u = await prisma.user.findUnique({
-    where: { id: uid },
-    select: { role: true, status: true },
-  });
-
-  if (
-    !u ||
-    u.status !== "ACTIVE" ||
-    !["ADMIN", "STAFF"].includes(u.role as any)
-  ) {
-    throw new Error("Admin only");
-  }
-  return { adminId: uid };
-}
-
-// ---------- NextAuth (default/user) ----------
 export const authOptions: NextAuthOptions = {
-  // IMPORTANT: set the secret so JWTs are consistent (fixes JWE errors)
   secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
   providers: [
@@ -72,17 +21,21 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const email = credentials?.email?.toLowerCase().trim();
-        const password = credentials?.password || "";
-        if (!email || !password) return null;
+        // Normalize inputs
+        const emailRaw = (credentials?.email ?? "").toString().trim();
+        const password = (credentials?.password ?? "").toString();
+        if (!emailRaw || !password) return null;
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        // IMPORTANT: case-insensitive lookup so login works no matter how the email was stored
+        const user = await prisma.user.findFirst({
+          where: { email: { equals: emailRaw, mode: "insensitive" } },
+        });
         if (!user) return null;
 
-        const valid = await bcrypt.compare(password, user.password);
-        if (!valid) return null;
+        // Password in DB must be a bcrypt hash
+        const ok = await bcrypt.compare(password, user.password);
+        if (!ok) return null;
 
-        // We only need id/email/name here; role/status will be attached in the jwt callback
         return {
           id: user.id,
           email: user.email,
@@ -94,22 +47,19 @@ export const authOptions: NextAuthOptions = {
   pages: { signIn: "/login" },
   callbacks: {
     async jwt({ token, user }) {
-      // On initial sign-in, copy id
+      // Attach user id once on sign-in
       if (user) token.uid = (user as any).id;
 
-      // Ensure role/status are present on the token for middleware/UI
-      // If they aren't on the token yet, fetch them once from DB.
-      if (!(token as any).role || !(token as any).status) {
-        const uid = (token as any).uid as string | undefined;
-        if (uid) {
-          const dbUser = await prisma.user.findUnique({
-            where: { id: uid },
-            select: { role: true, status: true },
-          });
-          if (dbUser) {
-            (token as any).role = dbUser.role;
-            (token as any).status = dbUser.status;
-          }
+      // Always refresh role & status from DB so admin changes take effect instantly
+      const uid = (token as any)?.uid as string | undefined;
+      if (uid) {
+        const db = await prisma.user.findUnique({
+          where: { id: uid },
+          select: { role: true, status: true },
+        });
+        if (db) {
+          (token as any).role = db.role;
+          (token as any).status = db.status;
         }
       }
       return token;
@@ -123,9 +73,41 @@ export const authOptions: NextAuthOptions = {
   },
 };
 
-// Handy server-side helper for API routes / server components
+// Require a logged-in user (server only)
 export async function requireUser() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) throw new Error("Unauthorized");
   return { userId: (session.user as any).id as string, session };
+}
+
+// Require ADMIN/STAFF + ACTIVE (server only) — used by admin pages
+export async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const uid = session?.user?.id as string | undefined;
+  if (!uid) throw new Error("Unauthorized");
+
+  const u = await prisma.user.findUnique({
+    where: { id: uid },
+    select: { role: true, status: true },
+  });
+
+  if (!u || u.status !== "ACTIVE" || !isAdminOrStaff(u.role)) {
+    throw new Error("Admin only");
+  }
+  return { adminId: uid };
+}
+
+// Same check but redirects instead of throwing (optional helper)
+export async function requireAdminOrRedirect(to = "/login?error=admin_only") {
+  const session = await getServerSession(authOptions);
+  const uid = session?.user?.id as string | undefined;
+  if (!uid) redirect(`/login?next=/admin`);
+
+  const u = await prisma.user.findUnique({
+    where: { id: uid },
+    select: { role: true, status: true },
+  });
+
+  if (!u || u.status !== "ACTIVE" || !isAdminOrStaff(u.role)) redirect(to);
+  return { adminId: uid };
 }
