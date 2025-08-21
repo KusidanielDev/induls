@@ -54,7 +54,7 @@ export async function POST(req: Request) {
             {
               type: accountType,
               number: accountNumber || rand(12),
-              balance: 150000,
+              balance: 0,
               currency: "INR",
             },
           ],

@@ -42,13 +42,13 @@ export async function POST(req: Request) {
             {
               type: "CHECKING",
               number: randomAcct(),
-              balance: 250000,
+              balance: 0,
               currency: "INR",
             },
             {
               type: "SAVINGS",
               number: randomAcct(),
-              balance: 500000,
+              balance: 0,
               currency: "INR",
             },
           ],
