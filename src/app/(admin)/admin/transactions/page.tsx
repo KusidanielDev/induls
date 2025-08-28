@@ -1,3 +1,4 @@
+// src/app/(admin)/admin/transactions/page.tsx
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -10,10 +11,17 @@ import {
   setTransactionStatus,
 } from "./actions";
 import { TxnStatus, TxnType } from "@prisma/client";
+import { formatINRfromCents } from "@/lib/money";
 
-/** Format INR from number of cents */
-function inr(amountCentsNumber: number) {
-  return `₹ ${(amountCentsNumber / 100).toLocaleString("en-IN")}`;
+export const dynamic = "force-dynamic";
+
+// Choose your grouping style globally for this page:
+// "en-US" → 83,498,939.00   |   "en-IN" → 8,34,98,939.00
+const LOCALE: "en-US" | "en-IN" = "en-US";
+
+/** Format INR from number/bigint of cents (always shows .00) */
+function inr(amountCents: number | bigint) {
+  return formatINRfromCents(amountCents, { locale: LOCALE });
 }
 
 export default async function TransactionsPage() {
@@ -24,16 +32,12 @@ export default async function TransactionsPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  // Convert BigInt -> number for rendering (safe if amounts fit JS Number)
-  const txsRaw = await prisma.transaction.findMany({
+  // Keep amountCents as-is (likely BigInt). Render using helper.
+  const txs = await prisma.transaction.findMany({
     include: { account: { include: { user: { select: { email: true } } } } },
     orderBy: { postedAt: "desc" },
     take: 50,
   });
-  const txs = txsRaw.map((t) => ({
-    ...t,
-    amountCents: Number(t.amountCents),
-  }));
 
   return (
     <div style={{ display: "grid", gap: 24 }}>
@@ -52,6 +56,7 @@ export default async function TransactionsPage() {
       >
         <div style={{ display: "grid", gap: 12 }}>
           <h3 style={{ margin: 0 }}>Create</h3>
+
           <div
             style={{
               display: "grid",
@@ -73,6 +78,7 @@ export default async function TransactionsPage() {
               accounts={accounts}
               extraFields={null}
             />
+
             {/* Withdraw */}
             <FormBlock
               title="Withdraw (Posted)"
@@ -87,6 +93,7 @@ export default async function TransactionsPage() {
               accounts={accounts}
               extraFields={null}
             />
+
             {/* Adjustment */}
             <FormBlock
               title="Adjustment (Posted, +/-)"
@@ -128,10 +135,28 @@ export default async function TransactionsPage() {
                   </select>
 
                   <FieldLabel>Counterparty (who sent it)</FieldLabel>
-                  <input name="counterpartyName" placeholder="userA" />
+                  <input
+                    name="counterpartyName"
+                    placeholder="userA"
+                    style={{
+                      width: "100%",
+                      padding: 8,
+                      borderRadius: 8,
+                      border: "1px solid #e5e7eb",
+                    }}
+                  />
 
                   <FieldLabel>Available At (optional)</FieldLabel>
-                  <input type="datetime-local" name="availableAt" />
+                  <input
+                    type="datetime-local"
+                    name="availableAt"
+                    style={{
+                      width: "100%",
+                      padding: 8,
+                      borderRadius: 8,
+                      border: "1px solid #e5e7eb",
+                    }}
+                  />
                 </>
               }
             />
@@ -149,6 +174,7 @@ export default async function TransactionsPage() {
         }}
       >
         <h3 style={{ marginTop: 0 }}>Recent (latest 50)</h3>
+
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
@@ -165,6 +191,7 @@ export default async function TransactionsPage() {
                 <Th>Actions</Th>
               </tr>
             </thead>
+
             <tbody>
               {txs.map((t) => (
                 <tr key={t.id} style={{ borderBottom: "1px solid #f8fafc" }}>
@@ -198,6 +225,8 @@ export default async function TransactionsPage() {
                           padding: "6px 10px",
                           borderRadius: 8,
                           border: "1px solid #e5e7eb",
+                          background: "#fff",
+                          cursor: "pointer",
                         }}
                       >
                         Save
@@ -208,15 +237,19 @@ export default async function TransactionsPage() {
                   <td style={{ padding: 8 }}>
                     {t.account.number} ({t.accountId.slice(0, 6)}…)
                   </td>
+
                   <td style={{ padding: 8 }}>
                     {t.account.user?.email ?? "unknown"}
                   </td>
+
                   <td style={{ padding: 8, fontWeight: 600 }}>
                     {t.type === TxnType.CREDIT ? "CREDIT (+)" : "DEBIT (–)"}
                   </td>
+
                   <td style={{ padding: 8, fontWeight: 700 }}>
                     {inr(t.amountCents)}
                   </td>
+
                   <td style={{ padding: 8 }}>
                     {/* Prefer counterparty text for credits */}
                     {t.type === "CREDIT" && t.counterpartyName
@@ -259,6 +292,7 @@ export default async function TransactionsPage() {
                   {/* Row actions */}
                   <td style={{ padding: 8 }}>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {/* Toggle Pending/Posted */}
                       <form
                         action={async (_fd: FormData) => {
                           "use server";
@@ -275,6 +309,8 @@ export default async function TransactionsPage() {
                             padding: "6px 10px",
                             borderRadius: 8,
                             border: "1px solid #e5e7eb",
+                            background: "#fff",
+                            cursor: "pointer",
                           }}
                         >
                           {t.status === TxnStatus.PENDING
@@ -283,6 +319,7 @@ export default async function TransactionsPage() {
                         </button>
                       </form>
 
+                      {/* Delete */}
                       <form
                         action={async (fd: FormData) => {
                           "use server";
@@ -301,7 +338,9 @@ export default async function TransactionsPage() {
                             padding: "6px 10px",
                             borderRadius: 8,
                             border: "1px solid #e5e7eb",
+                            background: "#fff",
                             color: "#b91c1c",
+                            cursor: "pointer",
                           }}
                         >
                           Delete
@@ -311,6 +350,7 @@ export default async function TransactionsPage() {
                   </td>
                 </tr>
               ))}
+
               {txs.length === 0 && (
                 <tr>
                   <td colSpan={8} style={{ padding: 12, color: "#6b7280" }}>
@@ -330,7 +370,14 @@ export default async function TransactionsPage() {
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th style={{ padding: 8, fontSize: 12, color: "#6b7280", fontWeight: 600 }}>
+    <th
+      style={{
+        padding: 8,
+        fontSize: 12,
+        color: "#6b7280",
+        fontWeight: 600,
+      }}
+    >
       {children}
     </th>
   );
@@ -371,6 +418,7 @@ function FormBlock({
       }}
     >
       <div style={{ fontWeight: 600, marginBottom: 8 }}>{title}</div>
+
       <div style={{ display: "grid", gap: 8 }}>
         <FieldLabel>Account</FieldLabel>
         <select
@@ -424,6 +472,7 @@ function FormBlock({
             background: "#111827",
             color: "#fff",
             borderRadius: 8,
+            cursor: "pointer",
           }}
         >
           Submit

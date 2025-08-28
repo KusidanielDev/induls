@@ -2,25 +2,17 @@
 import * as React from "react";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
+import { formatINRfromCents } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
+
+// Choose your grouping style: "en-US" → 83,498,939.00 | "en-IN" → 8,34,98,939.00
+const LOCALE: "en-US" | "en-IN" = "en-US";
 
 function mask(n: string) {
   if (!n) return "—";
   const last4 = n.slice(-4);
   return `••••••••${last4}`;
-}
-
-// Display-only formatter: BigInt cents -> "₹ 12,345.67"
-function formatInrFromCentsBig(cents: bigint) {
-  // convert BigInt cents → number rupees
-  const rupees = Number(cents) / 100;
-  return rupees.toLocaleString("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 }
 
 // Accept ALL native <th> attributes (style, className, colSpan, etc.)
@@ -114,8 +106,8 @@ export default async function ExternalTransfersAdminPage() {
                   {mask(r.accountNumber)}
                 </Td>
                 <Td style={{ fontFamily: "monospace" }}>{r.ifscCode}</Td>
-                {/* BigInt-safe UI formatting */}
-                <Td>{formatInrFromCentsBig(r.amountCents)}</Td>
+                {/* BigInt-safe UI formatting via shared helper */}
+                <Td>{formatINRfromCents(r.amountCents, { locale: LOCALE })}</Td>
               </tr>
             ))}
 

@@ -51,14 +51,14 @@ export default async function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u: (typeof users)[number]) => (
+            {users.map((u) => (
               <tr key={u.id} style={{ borderTop: "1px solid #e5e7eb" }}>
                 <Td>
                   <div style={{ fontWeight: 600 }}>{u.name ?? "—"}</div>
                   <div style={{ color: "#6b7280" }}>{u.email}</div>
                 </Td>
 
-                {/* Status select */}
+                {/* Status form (no client handlers) */}
                 <Td>
                   <form
                     action={async (fd) => {
@@ -68,6 +68,7 @@ export default async function UsersPage() {
                         fd.get("status") as "ACTIVE" | "SUSPENDED" | "PENDING"
                       );
                     }}
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
                   >
                     <select
                       name="status"
@@ -77,20 +78,27 @@ export default async function UsersPage() {
                         borderRadius: 8,
                         border: "1px solid #e5e7eb",
                       }}
-                      onChange={(e) =>
-                        (
-                          e.currentTarget.form as HTMLFormElement
-                        ).requestSubmit()
-                      }
                     >
                       <option value="PENDING">PENDING</option>
                       <option value="ACTIVE">ACTIVE</option>
                       <option value="SUSPENDED">SUSPENDED</option>
                     </select>
+                    <button
+                      type="submit"
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        border: "1px solid #d1d5db",
+                        background: "#fff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Save
+                    </button>
                   </form>
                 </Td>
 
-                {/* Role select */}
+                {/* Role form (no client handlers) */}
                 <Td>
                   <form
                     action={async (fd) => {
@@ -100,6 +108,7 @@ export default async function UsersPage() {
                         fd.get("role") as "USER" | "STAFF" | "ADMIN" | "AUDITOR"
                       );
                     }}
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
                   >
                     <select
                       name="role"
@@ -109,17 +118,24 @@ export default async function UsersPage() {
                         borderRadius: 8,
                         border: "1px solid #e5e7eb",
                       }}
-                      onChange={(e) =>
-                        (
-                          e.currentTarget.form as HTMLFormElement
-                        ).requestSubmit()
-                      }
                     >
                       <option value="USER">USER</option>
                       <option value="STAFF">STAFF</option>
                       <option value="ADMIN">ADMIN</option>
                       <option value="AUDITOR">AUDITOR</option>
                     </select>
+                    <button
+                      type="submit"
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        border: "1px solid #d1d5db",
+                        background: "#fff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Save
+                    </button>
                   </form>
                 </Td>
 
@@ -131,7 +147,7 @@ export default async function UsersPage() {
 
                 <Td>
                   <div style={{ display: "flex", gap: 8 }}>
-                    {/* Enable/Disable */}
+                    {/* Enable/Disable (server action only) */}
                     <form
                       action={toggleUserAccess.bind(
                         null,
@@ -153,7 +169,7 @@ export default async function UsersPage() {
                       </button>
                     </form>
 
-                    {/* DELETE */}
+                    {/* DELETE (server action only) */}
                     <form action={deleteUser.bind(null, u.id)}>
                       <DeleteButton />
                     </form>

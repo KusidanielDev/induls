@@ -26,14 +26,13 @@ import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import SavingsIcon from "@mui/icons-material/Savings";
 import CurrencyExchangeIcon from "@mui/icons-material/CurrencyExchange";
+import { maskINR, formatINRfromCents } from "@/lib/money";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
 const BRAND = "#98272A";
 const SECONDARY = "#f5f5f5";
-
-function mask(amountCents: number, show: boolean) {
-  return show ? `₹ ${(amountCents / 100).toLocaleString("en-IN")}` : "•••••••";
-}
+// Choose your grouping style: "en-US" (83,498,939.00) or "en-IN" (8,34,98,939.00)
+const LOCALE: "en-US" | "en-IN" = "en-US";
 
 function DetailsDialog({
   open,
@@ -102,7 +101,7 @@ function DetailsDialog({
             <Box sx={{ display: "flex", justifyContent: "space-between" }}>
               <Typography sx={{ color: "#6b7280" }}>Balance</Typography>
               <Typography sx={{ fontWeight: 900, fontSize: "1.1rem" }}>
-                ₹ {(account.balance / 100).toLocaleString("en-IN")}
+                {formatINRfromCents(account.balance, { locale: LOCALE })}
               </Typography>
             </Box>
             <Divider />
@@ -206,7 +205,7 @@ export default function AccountsPage() {
   const [current, setCurrent] = React.useState<any | null>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
 
-  // NEW: "View All" modal state
+  // "View All" modal state
   const [allOpen, setAllOpen] = React.useState(false);
 
   const filteredAccounts = accounts.filter(
@@ -338,7 +337,7 @@ export default function AccountsPage() {
                     Available Balance
                   </Typography>
                   <Typography variant="h6" sx={{ fontWeight: 900 }}>
-                    {mask(a.balance, visible)}
+                    {maskINR(a.balance, visible, { locale: LOCALE })}
                   </Typography>
                 </Box>
                 <Button
@@ -468,7 +467,6 @@ export default function AccountsPage() {
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                       <Box>
                         <Typography sx={{ fontWeight: 600 }}>
-                          {/* Prefer human copy: "Incoming from userA" for credits */}
                           {t.type === "CREDIT" && t.counterpartyName
                             ? `Incoming from ${t.counterpartyName}`
                             : t.description ||
@@ -522,8 +520,8 @@ export default function AccountsPage() {
                         : "#111827",
                   }}
                 >
-                  {t.type === "CREDIT" ? "+" : "-"}₹{" "}
-                  {(t.amountCents / 100).toLocaleString("en-IN")}
+                  {t.type === "CREDIT" ? "+" : "−"}
+                  {formatINRfromCents(t.amountCents, { locale: LOCALE })}
                 </Typography>
               </Box>
             ))}
@@ -685,8 +683,8 @@ function AllTransactionsDialog({
                         : "#111827",
                   }}
                 >
-                  {t.type === "CREDIT" ? "+" : "−"}₹{" "}
-                  {(t.amountCents / 100).toLocaleString("en-IN")}
+                  {t.type === "CREDIT" ? "+" : "−"}
+                  {formatINRfromCents(t.amountCents, { locale: LOCALE })}
                 </Typography>
               </Box>
             ))}

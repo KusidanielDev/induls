@@ -8,12 +8,19 @@ import { TxnType, TxnStatus } from "@prisma/client";
 /** Parse "2,500.50" -> bigint cents */
 function toCentsBig(input: string): bigint {
   const s = String(input).trim().replace(/[, ]/g, "");
-  if (!/^-?\d+(\.\d{1,2})?$/.test(s)) {
-    throw new Error("Invalid amount");
-  }
+  if (!/^-?\d+(\.\d{1,2})?$/.test(s)) throw new Error("Invalid amount");
   const [intPart, decPart = ""] = s.split(".");
-  const cents = BigInt(intPart) * 100n + BigInt((decPart + "00").slice(0, 2));
-  return cents;
+  return BigInt(intPart) * 100n + BigInt((decPart + "00").slice(0, 2));
+}
+
+/** Helper: fetch account & its owner userId */
+async function getAccountOwnerUserId(accountId: string) {
+  const acct = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { id: true, userId: true },
+  });
+  if (!acct) throw new Error("Account not found");
+  return acct.userId;
 }
 
 /** ------------------------------
@@ -24,15 +31,16 @@ export async function deposit(
   amountStr: string,
   description?: string
 ) {
-  const { adminId } = await requireAdmin();
+  await requireAdmin();
   const cents = toCentsBig(amountStr);
   if (cents <= 0n) throw new Error("Amount must be > 0");
+  const ownerUserId = await getAccountOwnerUserId(accountId);
 
   await prisma.$transaction(async (db) => {
     await db.transaction.create({
       data: {
         accountId,
-        userId: adminId,
+        userId: ownerUserId, // ✅ write to account owner
         type: TxnType.CREDIT,
         amountCents: cents,
         description: description || "Admin deposit",
@@ -53,15 +61,16 @@ export async function withdraw(
   amountStr: string,
   description?: string
 ) {
-  const { adminId } = await requireAdmin();
+  await requireAdmin();
   const cents = toCentsBig(amountStr);
   if (cents <= 0n) throw new Error("Amount must be > 0");
+  const ownerUserId = await getAccountOwnerUserId(accountId);
 
   await prisma.$transaction(async (db) => {
     await db.transaction.create({
       data: {
         accountId,
-        userId: adminId,
+        userId: ownerUserId, // ✅
         type: TxnType.DEBIT,
         amountCents: cents,
         description: description || "Admin withdrawal",
@@ -82,16 +91,17 @@ export async function adjustment(
   amountStr: string,
   description?: string
 ) {
-  const { adminId } = await requireAdmin();
+  await requireAdmin();
   const cents = toCentsBig(amountStr);
   if (cents === 0n) throw new Error("Zero adjustment not allowed");
+  const ownerUserId = await getAccountOwnerUserId(accountId);
 
   await prisma.$transaction(async (db) => {
     if (cents > 0n) {
       await db.transaction.create({
         data: {
           accountId,
-          userId: adminId,
+          userId: ownerUserId, // ✅
           type: TxnType.CREDIT,
           amountCents: cents,
           description: description || "Admin credit adjustment",
@@ -107,7 +117,7 @@ export async function adjustment(
       await db.transaction.create({
         data: {
           accountId,
-          userId: adminId,
+          userId: ownerUserId, // ✅
           type: TxnType.DEBIT,
           amountCents: abs,
           description: description || "Admin debit adjustment",
@@ -179,11 +189,6 @@ export async function deleteTransaction(transactionId: string) {
 /** ------------------------------
  *  INCOMING + STATUS CONTROL
  *  ------------------------------ */
-
-/** Create incoming (credit) as Pending or Posted.
- *  Pending: shows but does NOT affect balance
- *  Posted : shows and DOES affect balance
- */
 export async function createIncoming(
   accountId: string,
   amountStr: string,
@@ -192,9 +197,10 @@ export async function createIncoming(
   availableAt?: string,
   counterpartyName?: string
 ) {
-  const { adminId } = await requireAdmin();
+  await requireAdmin();
   const cents = toCentsBig(amountStr);
   if (cents <= 0n) throw new Error("Amount must be > 0");
+  const ownerUserId = await getAccountOwnerUserId(accountId);
 
   const avail = availableAt ? new Date(availableAt) : undefined;
   if (avail && Number.isNaN(avail.getTime()))
@@ -204,7 +210,7 @@ export async function createIncoming(
     const txn = await db.transaction.create({
       data: {
         accountId,
-        userId: adminId,
+        userId: ownerUserId, // ✅ transaction belongs to the account owner
         type: TxnType.CREDIT,
         amountCents: cents,
         description:
@@ -229,7 +235,6 @@ export async function createIncoming(
   revalidatePath("/admin/transactions");
 }
 
-/** Flip Pending <-> Posted for credits and maintain balance */
 export async function setTransactionStatus(
   transactionId: string,
   status: "PENDING" | "POSTED"

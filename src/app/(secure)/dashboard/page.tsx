@@ -24,13 +24,13 @@ import {
   AccountBalanceWallet,
 } from "@mui/icons-material";
 import { BalanceVisibilityContext } from "@/contexts/BalanceVisibility";
+import { maskINR } from "@/lib/money";
 
 const BRAND = "#98272A";
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
-
-function mask(amountCents: number, show: boolean) {
-  return show ? `₹ ${(amountCents / 100).toLocaleString("en-IN")}` : "•••••••";
-}
+// Choose your grouping style globally for this page:
+// "en-US" → 83,498,939.00   |   "en-IN" → 8,34,98,939.00
+const LOCALE: "en-US" | "en-IN" = "en-US";
 
 export default function DashboardPage() {
   const { visible, toggle } = React.useContext(BalanceVisibilityContext);
@@ -89,7 +89,7 @@ export default function DashboardPage() {
                   Total Balance
                 </Typography>
                 <Typography variant="h5" sx={{ fontWeight: 900 }}>
-                  {mask(totalCents, visible)}
+                  {maskINR(totalCents, visible, { locale: LOCALE })}
                 </Typography>
               </Box>
               <IconButton
@@ -162,7 +162,8 @@ export default function DashboardPage() {
                           {a.number}
                         </Typography>
                         <Typography variant="body2" sx={{ color: "#6b7280" }}>
-                          Balance: {mask(a.balance, visible)}
+                          Balance:{" "}
+                          {maskINR(a.balance, visible, { locale: LOCALE })}
                         </Typography>
                       </Box>
                     </Box>
@@ -327,7 +328,8 @@ export default function DashboardPage() {
                             : "inherit",
                         }}
                       >
-                        {isCredit ? "+" : "-"} {mask(t.amountCents, visible)}
+                        {isCredit ? "+" : "−"}{" "}
+                        {maskINR(t.amountCents, visible, { locale: LOCALE })}
                       </Typography>
                     </Box>
                     {idx < Math.min(txns.length, 8) - 1 && <Divider />}
