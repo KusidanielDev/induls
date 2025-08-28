@@ -1,124 +1,177 @@
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { setUserStatus, setUserRole, toggleUserAccess } from "./actions";
+import {
+  deleteUser,
+  setUserRole,
+  setUserStatus,
+  toggleUserAccess,
+} from "./actions";
+import DeleteButton from "./DeleteButton";
+
+export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
   await requireAdmin();
 
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
-    include: { accounts: true }, // simpler; no field list
+    include: {
+      accounts: { select: { id: true, balance: true } },
+    },
   });
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <h1>Users</h1>
+    <div style={{ display: "grid", gap: 16, padding: 24 }}>
+      <h1 style={{ fontSize: 22, fontWeight: 600 }}>Users</h1>
+
       <div
         style={{
           overflowX: "auto",
-          background: "#fff",
-          border: "1px solid #eee",
-          borderRadius: 16,
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
         }}
       >
-        <table style={{ width: "100%", fontSize: 14 }}>
+        <table
+          style={{
+            minWidth: 900,
+            width: "100%",
+            fontSize: 14,
+            borderCollapse: "separate",
+            borderSpacing: 0,
+          }}
+        >
           <thead style={{ background: "#f9fafb" }}>
             <tr>
-              <Th>Email</Th>
-              <Th>Name</Th>
-              <Th>Role</Th>
+              <Th>User</Th>
               <Th>Status</Th>
+              <Th>Role</Th>
               <Th>Accounts</Th>
+              <Th>Created</Th>
               <Th>Actions</Th>
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
-              <tr key={u.id} style={{ borderTop: "1px solid #eee" }}>
-                <Td>{u.email}</Td>
-                <Td>{u.name ?? "—"}</Td>
+            {users.map((u: (typeof users)[number]) => (
+              <tr key={u.id} style={{ borderTop: "1px solid #e5e7eb" }}>
                 <Td>
-                  <form
-                    action={async (fd: FormData) => {
-                      "use server";
-                      await setUserRole(u.id, fd.get("role") as any);
-                    }}
-                  >
-                    <select
-                      name="role"
-                      defaultValue={u.role}
-                      style={{
-                        padding: 6,
-                        borderRadius: 8,
-                        border: "1px solid #ddd",
-                      }}
-                    >
-                      <option value="USER">USER</option>
-                      <option value="STAFF">STAFF</option>
-                      <option value="ADMIN">ADMIN</option>
-                      <option value="AUDITOR">AUDITOR</option>
-                    </select>
-                    <button style={{ marginLeft: 8, padding: "6px 12px" }}>
-                      Save
-                    </button>
-                  </form>
+                  <div style={{ fontWeight: 600 }}>{u.name ?? "—"}</div>
+                  <div style={{ color: "#6b7280" }}>{u.email}</div>
                 </Td>
+
+                {/* Status select */}
                 <Td>
                   <form
-                    action={async (fd: FormData) => {
+                    action={async (fd) => {
                       "use server";
-                      await setUserStatus(u.id, fd.get("status") as any);
+                      await setUserStatus(
+                        u.id,
+                        fd.get("status") as "ACTIVE" | "SUSPENDED" | "PENDING"
+                      );
                     }}
                   >
                     <select
                       name="status"
                       defaultValue={u.status}
                       style={{
-                        padding: 6,
+                        padding: "6px 10px",
                         borderRadius: 8,
-                        border: "1px solid #ddd",
+                        border: "1px solid #e5e7eb",
                       }}
+                      onChange={(e) =>
+                        (
+                          e.currentTarget.form as HTMLFormElement
+                        ).requestSubmit()
+                      }
                     >
                       <option value="PENDING">PENDING</option>
                       <option value="ACTIVE">ACTIVE</option>
                       <option value="SUSPENDED">SUSPENDED</option>
                     </select>
-                    <button style={{ marginLeft: 8, padding: "6px 12px" }}>
-                      Save
-                    </button>
                   </form>
                 </Td>
+
+                {/* Role select */}
                 <Td>
-                  {u.accounts?.length
-                    ? u.accounts.map((a) => (
-                        <div key={a.id} style={{ fontSize: 12 }}>
-                          {(a as any).currency ?? "—"}{" "}
-                          {(((a as any).balance ?? 0) / 100).toFixed(2)}
-                        </div>
-                      ))
-                    : "—"}
+                  <form
+                    action={async (fd) => {
+                      "use server";
+                      await setUserRole(
+                        u.id,
+                        fd.get("role") as "USER" | "STAFF" | "ADMIN" | "AUDITOR"
+                      );
+                    }}
+                  >
+                    <select
+                      name="role"
+                      defaultValue={u.role}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        border: "1px solid #e5e7eb",
+                      }}
+                      onChange={(e) =>
+                        (
+                          e.currentTarget.form as HTMLFormElement
+                        ).requestSubmit()
+                      }
+                    >
+                      <option value="USER">USER</option>
+                      <option value="STAFF">STAFF</option>
+                      <option value="ADMIN">ADMIN</option>
+                      <option value="AUDITOR">AUDITOR</option>
+                    </select>
+                  </form>
                 </Td>
 
                 <Td>
-                  <form
-                    action={async () => {
-                      "use server";
-                      await toggleUserAccess(u.id, u.status !== "ACTIVE");
-                    }}
-                  >
-                    <button
-                      style={{
-                        padding: "6px 12px",
-                        border: "1px solid #ddd",
-                        borderRadius: 8,
-                      }}
+                  <div>{u.accounts.length} account(s)</div>
+                </Td>
+
+                <Td>{new Date(u.createdAt).toLocaleString()}</Td>
+
+                <Td>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {/* Enable/Disable */}
+                    <form
+                      action={toggleUserAccess.bind(
+                        null,
+                        u.id,
+                        u.status !== "ACTIVE"
+                      )}
                     >
-                      {u.status === "ACTIVE" ? "Suspend" : "Activate"}
-                    </button>
-                  </form>
+                      <button
+                        type="submit"
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 8,
+                          border: "1px solid #d1d5db",
+                          background: "#fff",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {u.status === "ACTIVE" ? "Disable" : "Enable"}
+                      </button>
+                    </form>
+
+                    {/* DELETE */}
+                    <form action={deleteUser.bind(null, u.id)}>
+                      <DeleteButton />
+                    </form>
+                  </div>
                 </Td>
               </tr>
             ))}
+
+            {users.length === 0 && (
+              <tr>
+                <td
+                  colSpan={6}
+                  style={{ padding: 24, textAlign: "center", color: "#6b7280" }}
+                >
+                  No users found.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -128,7 +181,14 @@ export default async function UsersPage() {
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280" }}>
+    <th
+      style={{
+        textAlign: "left",
+        padding: "10px 12px",
+        color: "#6b7280",
+        fontWeight: 500,
+      }}
+    >
       {children}
     </th>
   );

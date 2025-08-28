@@ -1,30 +1,51 @@
 // src/app/api/admin/external-transfers/route.ts
-export const runtime = "nodejs";
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireAdmin } from "@/lib/auth";
+
+export const runtime = "nodejs";
 
 export async function GET() {
-  await requireAdmin();
-  const rows = await prisma.externalTransfer.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      user: { select: { email: true } },
-      account: { select: { id: true } },
-    },
-    take: 500,
-  });
+  try {
+    await requireAdmin();
 
-  const data = rows.map((r) => ({
-    id: r.id,
-    createdAt: r.createdAt,
-    amount: r.amountCents / 100,
-    recipientName: r.recipientName,
-    accountNumberMasked: r.accountNumber.replace(/.(?=.{4})/g, "•"),
-    ifscCode: r.ifscCode,
-    userEmail: r.user?.email ?? null,
-    accountId: r.accountId,
-  }));
+    const rows = await prisma.externalTransfer.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        user: { select: { email: true, name: true } },
+        account: { select: { id: true, number: true } },
+      },
+      take: 200,
+    });
 
-  return NextResponse.json({ data });
+    const data = rows.map((r) => {
+      const amountCentsNum = Number(r.amountCents); // BigInt -> number for JSON
+      return {
+        id: r.id,
+        createdAt: r.createdAt,
+        // convenience fields
+        amountCents: amountCentsNum,
+        amount: amountCentsNum / 100, // rupees (number)
+        currency: "INR",
+
+        // sender
+        userEmail: r.user?.email ?? null,
+        userName: r.user?.name ?? null,
+        accountId: r.accountId,
+        accountNumber: r.account?.number ?? null,
+
+        // recipient
+        recipientName: r.recipientName,
+        accountNumberMasked: r.accountNumber.replace(/.(?=.{4})/g, "•"),
+        ifscCode: r.ifscCode,
+      };
+    });
+
+    return NextResponse.json({ items: data });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err?.message ?? "Unauthorized" },
+      { status: err?.statusCode ?? 401 }
+    );
+  }
 }

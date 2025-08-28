@@ -11,6 +11,18 @@ function mask(n: string) {
   return `••••••••${last4}`;
 }
 
+// Display-only formatter: BigInt cents -> "₹ 12,345.67"
+function formatInrFromCentsBig(cents: bigint) {
+  // convert BigInt cents → number rupees
+  const rupees = Number(cents) / 100;
+  return rupees.toLocaleString("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 // Accept ALL native <th> attributes (style, className, colSpan, etc.)
 type ThProps = React.ThHTMLAttributes<HTMLTableCellElement>;
 function Th({ children, style, ...rest }: ThProps) {
@@ -41,7 +53,6 @@ function Td({ children, style, ...rest }: TdProps) {
         verticalAlign: "top",
         ...(style || {}),
       }}
-      {...rest}
     >
       {children}
     </td>
@@ -103,7 +114,8 @@ export default async function ExternalTransfersAdminPage() {
                   {mask(r.accountNumber)}
                 </Td>
                 <Td style={{ fontFamily: "monospace" }}>{r.ifscCode}</Td>
-                <Td>{(r.amountCents / 100).toFixed(2)}</Td>
+                {/* BigInt-safe UI formatting */}
+                <Td>{formatInrFromCentsBig(r.amountCents)}</Td>
               </tr>
             ))}
 

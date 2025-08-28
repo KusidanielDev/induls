@@ -1,6 +1,5 @@
 export const runtime = "nodejs";
 import OpenAI from "openai";
-// optional: email transcript of chats
 import { sendEmail } from "@/lib/email";
 
 const hasKey = Boolean(process.env.OPENAI_API_KEY);
@@ -9,7 +8,13 @@ const MOCK =
 const client =
   hasKey && !MOCK ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
-// local reply for dev/mock
+// Optional default recipient (set one of these in your .env)
+const DEFAULT_TO =
+  process.env.DEFAULT_EMAIL_TO ||
+  process.env.SUPPORT_EMAIL ||
+  process.env.EMAIL_TO ||
+  ""; // empty means "no default"
+
 function localReply(message: string) {
   if (!message?.trim()) return "Hi! How can I help you today?";
   if (/balance|account/i.test(message))
@@ -20,16 +25,26 @@ function localReply(message: string) {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
+  const body: any = await req.json().catch(() => ({}));
   const message: string = (body?.message ?? "").toString();
-  const emailCopy: boolean = Boolean(body?.emailCopy); // optional
+  const emailCopy: boolean = Boolean(body?.emailCopy);
+  const requestedTo: string | undefined = body?.to; // optional per-request recipient
 
   // Helper to optionally email the chat
   async function maybeEmail(reply: string) {
     if (!emailCopy) return;
+    const to = requestedTo || DEFAULT_TO;
+    if (!to) {
+      // No recipient configured; skip emailing silently
+      return;
+    }
     await sendEmail({
+      to,
       subject: "Chat transcript",
-      html: `<div style="font-family: Arial"><p><b>User:</b> ${message}</p><p><b>Assistant:</b> ${reply}</p></div>`,
+      html: `<div style="font-family: Arial, sans-serif">
+               <p><b>User:</b> ${escapeHtml(message)}</p>
+               <p><b>Assistant:</b> ${escapeHtml(reply)}</p>
+             </div>`,
     });
   }
 
@@ -41,7 +56,6 @@ export async function POST(req: Request) {
   }
 
   try {
-    // If on openai@5 and want the new Responses API, swap to client.responses.create
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -57,10 +71,20 @@ export async function POST(req: Request) {
     const reply = completion.choices?.[0]?.message?.content?.trim() || "…";
     await maybeEmail(reply);
     return Response.json({ reply });
-  } catch (err: any) {
-    // fall back locally on any error (quota, etc.) but keep UI blissfully simple
+  } catch {
+    // Fallback locally on any error
     const reply = localReply(message);
     await maybeEmail(reply);
     return Response.json({ reply });
   }
+}
+
+/** Minimal HTML escaper for safety in the email body */
+function escapeHtml(s: string) {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }

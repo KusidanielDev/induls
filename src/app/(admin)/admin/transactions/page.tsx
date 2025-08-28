@@ -6,7 +6,15 @@ import {
   adjustment,
   updateTransactionDate,
   deleteTransaction,
+  createIncoming,
+  setTransactionStatus,
 } from "./actions";
+import { TxnStatus, TxnType } from "@prisma/client";
+
+/** Format INR from number of cents */
+function inr(amountCentsNumber: number) {
+  return `₹ ${(amountCentsNumber / 100).toLocaleString("en-IN")}`;
+}
 
 export default async function TransactionsPage() {
   await requireAdmin();
@@ -16,171 +24,400 @@ export default async function TransactionsPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  const txs = await prisma.transaction.findMany({
+  // Convert BigInt -> number for rendering (safe if amounts fit JS Number)
+  const txsRaw = await prisma.transaction.findMany({
     include: { account: { include: { user: { select: { email: true } } } } },
     orderBy: { postedAt: "desc" },
     take: 50,
   });
+  const txs = txsRaw.map((t) => ({
+    ...t,
+    amountCents: Number(t.amountCents),
+  }));
 
   return (
     <div style={{ display: "grid", gap: 24 }}>
       <h1>Transactions</h1>
 
+      {/* Create forms */}
       <section
         style={{
           background: "#fff",
           border: "1px solid #eee",
-          borderRadius: 16,
+          borderRadius: 12,
           padding: 16,
+          display: "grid",
+          gap: 16,
         }}
       >
-        <h2 style={{ marginTop: 0 }}>New deposit / withdraw / adjustment</h2>
-        <div
-          style={{
-            display: "grid",
-            gap: 16,
-            gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))",
-          }}
-        >
-          <TxForm title="Deposit" action={deposit} accounts={accounts} />
-          <TxForm title="Withdraw" action={withdraw} accounts={accounts} />
-          <TxForm
-            title="Adjustment (+/-)"
-            action={adjustment}
-            accounts={accounts}
-          />
+        <div style={{ display: "grid", gap: 12 }}>
+          <h3 style={{ margin: 0 }}>Create</h3>
+          <div
+            style={{
+              display: "grid",
+              gap: 16,
+              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            }}
+          >
+            {/* Deposit */}
+            <FormBlock
+              title="Deposit (Posted)"
+              action={async (fd: FormData) => {
+                "use server";
+                await deposit(
+                  String(fd.get("accountId")),
+                  String(fd.get("amount")),
+                  String(fd.get("description") || "")
+                );
+              }}
+              accounts={accounts}
+              extraFields={null}
+            />
+            {/* Withdraw */}
+            <FormBlock
+              title="Withdraw (Posted)"
+              action={async (fd: FormData) => {
+                "use server";
+                await withdraw(
+                  String(fd.get("accountId")),
+                  String(fd.get("amount")),
+                  String(fd.get("description") || "")
+                );
+              }}
+              accounts={accounts}
+              extraFields={null}
+            />
+            {/* Adjustment */}
+            <FormBlock
+              title="Adjustment (Posted, +/-)"
+              action={async (fd: FormData) => {
+                "use server";
+                await adjustment(
+                  String(fd.get("accountId")),
+                  String(fd.get("amount")),
+                  String(fd.get("description") || "")
+                );
+              }}
+              accounts={accounts}
+              extraFields={null}
+            />
+
+            {/* Incoming (Pending / Complete) */}
+            <FormBlock
+              title="Incoming (Admin) — Pending or Complete"
+              action={async (fd: FormData) => {
+                "use server";
+                await createIncoming(
+                  String(fd.get("accountId")),
+                  String(fd.get("amount")),
+                  String(fd.get("description") || ""),
+                  String(fd.get("status") || "PENDING") as "PENDING" | "POSTED",
+                  (fd.get("availableAt") as string) || undefined,
+                  (fd.get("counterpartyName") as string) || undefined
+                );
+              }}
+              accounts={accounts}
+              extraFields={
+                <>
+                  <FieldLabel>Status</FieldLabel>
+                  <select name="status" defaultValue="PENDING" required>
+                    <option value="PENDING">
+                      Pending (does not add to balance)
+                    </option>
+                    <option value="POSTED">Complete (adds to balance)</option>
+                  </select>
+
+                  <FieldLabel>Counterparty (who sent it)</FieldLabel>
+                  <input name="counterpartyName" placeholder="userA" />
+
+                  <FieldLabel>Available At (optional)</FieldLabel>
+                  <input type="datetime-local" name="availableAt" />
+                </>
+              }
+            />
+          </div>
         </div>
       </section>
 
+      {/* Table */}
       <section
         style={{
-          overflowX: "auto",
           background: "#fff",
           border: "1px solid #eee",
-          borderRadius: 16,
+          borderRadius: 12,
+          padding: 16,
         }}
       >
-        <table style={{ width: "100%", fontSize: 14 }}>
-          <thead style={{ background: "#f9fafb" }}>
-            <tr>
-              <Th>Date</Th>
-              <Th>User</Th>
-              <Th>Account</Th>
-              <Th>Type</Th>
-              <Th>Amount</Th>
-              <Th>Description</Th>
-              <Th>Edit</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {txs.map((t) => (
-              <tr key={t.id} style={{ borderTop: "1px solid #eee" }}>
-                <Td>{new Date(t.postedAt).toLocaleString()}</Td>
-                <Td>{t.account.user?.email ?? "—"}</Td>
-                <Td style={{ fontFamily: "monospace" }}>
-                  {t.accountId.slice(0, 8)}…
-                </Td>
-                <Td>{t.type}</Td>
-                <Td>{(t.amountCents / 100).toFixed(2)}</Td>
-                <Td>{t.description ?? "—"}</Td>
-                <Td>
-                  <div
-                    style={{ display: "flex", gap: 8, alignItems: "center" }}
-                  >
+        <h3 style={{ marginTop: 0 }}>Recent (latest 50)</h3>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr
+                style={{ textAlign: "left", borderBottom: "1px solid #f1f5f9" }}
+              >
+                <Th>Date</Th>
+                <Th>Account</Th>
+                <Th>User</Th>
+                <Th>Type</Th>
+                <Th>Amount</Th>
+                <Th>Description</Th>
+                <Th>Status</Th>
+                <Th>Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {txs.map((t) => (
+                <tr key={t.id} style={{ borderBottom: "1px solid #f8fafc" }}>
+                  {/* Update date/time */}
+                  <td style={{ padding: 8 }}>
                     <form
                       action={async (fd: FormData) => {
                         "use server";
-                        const iso = String(fd.get("date"));
-                        await updateTransactionDate(t.id, iso);
+                        await updateTransactionDate(
+                          String(fd.get("transactionId")),
+                          String(fd.get("iso"))
+                        );
                       }}
                     >
-                      <input type="datetime-local" name="date" />
-                      <button style={{ marginLeft: 8, padding: "6px 12px" }}>
+                      <input type="hidden" name="transactionId" value={t.id} />
+                      <input
+                        name="iso"
+                        defaultValue={new Date(t.postedAt)
+                          .toISOString()
+                          .slice(0, 16)}
+                        type="datetime-local"
+                        style={{
+                          padding: 6,
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 8,
+                        }}
+                      />
+                      <button
+                        style={{
+                          marginLeft: 6,
+                          padding: "6px 10px",
+                          borderRadius: 8,
+                          border: "1px solid #e5e7eb",
+                        }}
+                      >
                         Save
                       </button>
                     </form>
-                    <form
-                      action={async () => {
-                        "use server";
-                        await deleteTransaction(t.id);
-                      }}
-                    >
-                      <button
+                  </td>
+
+                  <td style={{ padding: 8 }}>
+                    {t.account.number} ({t.accountId.slice(0, 6)}…)
+                  </td>
+                  <td style={{ padding: 8 }}>
+                    {t.account.user?.email ?? "unknown"}
+                  </td>
+                  <td style={{ padding: 8, fontWeight: 600 }}>
+                    {t.type === TxnType.CREDIT ? "CREDIT (+)" : "DEBIT (–)"}
+                  </td>
+                  <td style={{ padding: 8, fontWeight: 700 }}>
+                    {inr(t.amountCents)}
+                  </td>
+                  <td style={{ padding: 8 }}>
+                    {/* Prefer counterparty text for credits */}
+                    {t.type === "CREDIT" && t.counterpartyName
+                      ? `Incoming from ${t.counterpartyName}`
+                      : t.description ??
+                        (t.type === "DEBIT" ? "Debit" : "Credit")}
+                  </td>
+
+                  {/* Status pill */}
+                  <td style={{ padding: 8 }}>
+                    {t.status === TxnStatus.PENDING ? (
+                      <span
                         style={{
-                          padding: "6px 12px",
-                          color: "#b91c1c",
-                          border: "1px solid #ddd",
-                          borderRadius: 8,
+                          fontSize: 12,
+                          padding: "2px 8px",
+                          borderRadius: 999,
+                          background: "#fef3c7",
+                          color: "#92400e",
+                          border: "1px solid #fde68a",
                         }}
                       >
-                        Delete
-                      </button>
-                    </form>
-                  </div>
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                        Pending
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: 12,
+                          padding: "2px 8px",
+                          borderRadius: 999,
+                          background: "#dcfce7",
+                          color: "#065f46",
+                          border: "1px solid #a7f3d0",
+                        }}
+                      >
+                        Complete
+                      </span>
+                    )}
+                  </td>
+
+                  {/* Row actions */}
+                  <td style={{ padding: 8 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <form
+                        action={async (_fd: FormData) => {
+                          "use server";
+                          await setTransactionStatus(
+                            t.id,
+                            t.status === TxnStatus.PENDING
+                              ? "POSTED"
+                              : "PENDING"
+                          );
+                        }}
+                      >
+                        <button
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: 8,
+                            border: "1px solid #e5e7eb",
+                          }}
+                        >
+                          {t.status === TxnStatus.PENDING
+                            ? "Mark Complete"
+                            : "Mark Pending"}
+                        </button>
+                      </form>
+
+                      <form
+                        action={async (fd: FormData) => {
+                          "use server";
+                          await deleteTransaction(
+                            String(fd.get("transactionId"))
+                          );
+                        }}
+                      >
+                        <input
+                          type="hidden"
+                          name="transactionId"
+                          value={t.id}
+                        />
+                        <button
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: 8,
+                            border: "1px solid #e5e7eb",
+                            color: "#b91c1c",
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {txs.length === 0 && (
+                <tr>
+                  <td colSpan={8} style={{ padding: 12, color: "#6b7280" }}>
+                    No transactions.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );
 }
 
+/* ---------- helpers ---------- */
+
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th style={{ textAlign: "left", padding: "10px 12px", color: "#6b7280" }}>
+    <th style={{ padding: 8, fontSize: 12, color: "#6b7280", fontWeight: 600 }}>
       {children}
     </th>
   );
 }
-function Td({
-  children,
-  style,
-}: {
-  children: React.ReactNode;
-  style?: React.CSSProperties;
-}) {
-  return <td style={{ padding: "12px", ...style }}>{children}</td>;
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+      {children}
+    </div>
+  );
 }
 
-function TxForm({
+function FormBlock({
   title,
   action,
   accounts,
+  extraFields,
 }: {
   title: string;
-  action: (
-    accountId: string,
-    amount: string,
-    description?: string
-  ) => Promise<any>;
-  accounts: { id: string; user: { email: string | null } | null }[];
+  action: (fd: FormData) => Promise<void>;
+  accounts: {
+    id: string;
+    number: string;
+    user: { email: string | null } | null;
+  }[];
+  extraFields: React.ReactNode | null;
 }) {
   return (
     <form
-      action={async (fd: FormData) => {
-        "use server";
-        await action(
-          String(fd.get("accountId")),
-          String(fd.get("amount")),
-          String(fd.get("description") || "")
-        );
+      action={action}
+      style={{
+        border: "1px solid #eee",
+        borderRadius: 12,
+        padding: 12,
+        display: "grid",
+        gap: 8,
       }}
-      style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}
     >
       <div style={{ fontWeight: 600, marginBottom: 8 }}>{title}</div>
       <div style={{ display: "grid", gap: 8 }}>
-        <select name="accountId" required>
+        <FieldLabel>Account</FieldLabel>
+        <select
+          name="accountId"
+          required
+          style={{
+            width: "100%",
+            padding: 8,
+            borderRadius: 8,
+            border: "1px solid #e5e7eb",
+          }}
+        >
           <option value="">Select account</option>
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
-              {a.user?.email ?? "unknown"} — {a.id.slice(0, 8)}…
+              {a.number} — {a.user?.email ?? "user"}
             </option>
           ))}
         </select>
-        <input name="amount" placeholder="e.g. 120.50" required />
-        <input name="description" placeholder="Description (optional)" />
+
+        <FieldLabel>Amount</FieldLabel>
+        <input
+          name="amount"
+          placeholder="e.g. 2500.00"
+          required
+          style={{
+            width: "100%",
+            padding: 8,
+            borderRadius: 8,
+            border: "1px solid #e5e7eb",
+          }}
+        />
+
+        <FieldLabel>Description</FieldLabel>
+        <input
+          name="description"
+          placeholder="Optional description"
+          style={{
+            width: "100%",
+            padding: 8,
+            borderRadius: 8,
+            border: "1px solid #e5e7eb",
+          }}
+        />
+
+        {extraFields}
+
         <button
           style={{
             padding: "8px 12px",

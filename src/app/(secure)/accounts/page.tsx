@@ -198,7 +198,7 @@ function DetailsDialog({
 
 export default function AccountsPage() {
   const { visible } = React.useContext(BalanceVisibilityContext);
-  const { data } = useSWR("/api/me", fetcher);
+  const { data } = useSWR("/api/me?take=20", fetcher);
   const accounts = data?.accounts ?? [];
   const txns = data?.txns ?? [];
 
@@ -206,7 +206,9 @@ export default function AccountsPage() {
   const [current, setCurrent] = React.useState<any | null>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
 
-  // Filter accounts based on search query
+  // NEW: "View All" modal state
+  const [allOpen, setAllOpen] = React.useState(false);
+
   const filteredAccounts = accounts.filter(
     (account: any) =>
       account.number.includes(searchQuery) ||
@@ -420,8 +422,7 @@ export default function AccountsPage() {
                 variant="outlined"
                 size="small"
                 sx={{ borderColor: BRAND, color: BRAND }}
-                component={Link}
-                href="/transactions"
+                onClick={() => setAllOpen(true)}
               >
                 View All
               </Button>
@@ -464,22 +465,61 @@ export default function AccountsPage() {
                         </Typography>
                       )}
                     </Box>
-                    <Box>
-                      <Typography sx={{ fontWeight: 600 }}>
-                        {t.description ||
-                          (t.type === "CREDIT" ? "Credit" : "Debit")}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: "#6b7280" }}>
-                        {new Date(t.postedAt).toLocaleDateString()} •{" "}
-                        {t.account}
-                      </Typography>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      <Box>
+                        <Typography sx={{ fontWeight: 600 }}>
+                          {/* Prefer human copy: "Incoming from userA" for credits */}
+                          {t.type === "CREDIT" && t.counterpartyName
+                            ? `Incoming from ${t.counterpartyName}`
+                            : t.description ||
+                              (t.type === "CREDIT" ? "Credit" : "Debit")}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: "#6b7280" }}>
+                          {new Date(t.postedAt).toLocaleDateString()} •{" "}
+                          {t.accountNumber}
+                        </Typography>
+                      </Box>
+
+                      {/* Pending badge */}
+                      {t.type === "CREDIT" && t.status === "PENDING" && (
+                        <Box
+                          component="span"
+                          sx={{
+                            fontSize: 11,
+                            px: 1,
+                            py: 0.3,
+                            borderRadius: 999,
+                            bgcolor: "#fef3c7",
+                            color: "#92400e",
+                            border: "1px solid #fde68a",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 0.5,
+                            ml: 1,
+                          }}
+                          title={
+                            t.availableAt
+                              ? `Funds pending. Expected ${new Date(
+                                  t.availableAt
+                                ).toLocaleString()}`
+                              : "Funds pending"
+                          }
+                        >
+                          Incoming • Pending
+                        </Box>
+                      )}
                     </Box>
                   </Box>
                 </Box>
                 <Typography
                   sx={{
                     fontWeight: 900,
-                    color: t.type === "CREDIT" ? "#15803d" : "#111827",
+                    color:
+                      t.type === "CREDIT"
+                        ? t.status === "PENDING"
+                          ? "#6b7280"
+                          : "#15803d"
+                        : "#111827",
                   }}
                 >
                   {t.type === "CREDIT" ? "+" : "-"}₹{" "}
@@ -537,11 +577,125 @@ export default function AccountsPage() {
         </Grid>
       </Grid>
 
+      {/* Account details dialog */}
       <DetailsDialog
         open={open}
         onClose={() => setOpen(false)}
         account={current}
       />
+
+      {/* All transactions dialog */}
+      <AllTransactionsDialog open={allOpen} onClose={() => setAllOpen(false)} />
     </Container>
+  );
+}
+
+/* ----------------------- All Transactions Modal ----------------------- */
+
+function AllTransactionsDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { data } = useSWR(open ? "/api/me?take=500" : null, fetcher);
+  const full = (data?.txns as any[]) ?? [];
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
+      <DialogTitle>All Transactions</DialogTitle>
+      <DialogContent dividers>
+        {full.length === 0 ? (
+          <Typography sx={{ color: "#6b7280" }}>No transactions</Typography>
+        ) : (
+          <Box sx={{ display: "flex", flexDirection: "column" }}>
+            {full.map((t) => (
+              <Box
+                key={t.id}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  py: 1.25,
+                  borderBottom: "1px solid #f1f5f9",
+                }}
+              >
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Box
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "50%",
+                      bgcolor: t.type === "CREDIT" ? "#dcfce7" : "#fee2e2",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Typography sx={{ fontWeight: 700 }}>
+                      {t.type === "CREDIT" ? "+" : "−"}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography sx={{ fontWeight: 600 }}>
+                      {t.type === "CREDIT" && t.counterpartyName
+                        ? `Incoming from ${t.counterpartyName}`
+                        : t.description ||
+                          (t.type === "CREDIT" ? "Credit" : "Debit")}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: "#6b7280" }}>
+                      {new Date(t.postedAt).toLocaleString()} •{" "}
+                      {t.accountNumber}
+                    </Typography>
+                    {t.type === "CREDIT" && t.status === "PENDING" && (
+                      <Box
+                        component="span"
+                        sx={{
+                          fontSize: 11,
+                          px: 1,
+                          py: 0.3,
+                          borderRadius: 999,
+                          bgcolor: "#fef3c7",
+                          color: "#92400e",
+                          border: "1px solid #fde68a",
+                          ml: 1,
+                        }}
+                        title={
+                          t.availableAt
+                            ? `Funds pending. Expected ${new Date(
+                                t.availableAt
+                              ).toLocaleString()}`
+                            : "Funds pending"
+                        }
+                      >
+                        Incoming • Pending
+                      </Box>
+                    )}
+                  </Box>
+                </Box>
+                <Typography
+                  sx={{
+                    fontWeight: 900,
+                    color:
+                      t.type === "CREDIT"
+                        ? t.status === "PENDING"
+                          ? "#6b7280"
+                          : "#15803d"
+                        : "#111827",
+                  }}
+                >
+                  {t.type === "CREDIT" ? "+" : "−"}₹{" "}
+                  {(t.amountCents / 100).toLocaleString("en-IN")}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
   );
 }

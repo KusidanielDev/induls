@@ -1,5 +1,8 @@
+// prisma/schema.prisma
+
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  engineType = "binary"
 }
 
 datasource db {
@@ -30,28 +33,33 @@ enum UserStatus {
   SUSPENDED
 }
 
-model User {
-  id            String            @id @default(cuid())
-  email         String            @unique
-  name          String?
-  password      String
-  role          Role              @default(USER)
-  status        UserStatus        @default(PENDING)
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  accounts      Account[]
-  beneficiaries Beneficiary[]
-  transactions  Transaction[]     @relation("UserTransactions")
-  externalTransfers ExternalTransfer[] // Added relation
+enum TxnStatus {
+  PENDING
+  POSTED
+}
 
-  // 🔧 Back-relation for AuditLog.actor
-  auditLogs AuditLog[] @relation("AuditLogActor")
+model User {
+  id                String            @id @default(cuid())
+  email             String            @unique
+  name              String?
+  password          String
+  role              Role              @default(USER)
+  status            UserStatus        @default(PENDING)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  accounts          Account[]
+  beneficiaries     Beneficiary[]
+  transactions      Transaction[]     @relation("UserTransactions")
+  externalTransfers ExternalTransfer[]
+
+  auditLogs         AuditLog[]        @relation("AuditLogActor")
 }
 
 model AuditLog {
   id        String   @id @default(cuid())
   actorId   String?
-  actor     User?    @relation(name: "AuditLogActor", fields: [actorId], references: [id])
+  actor     User?    @relation(name: "AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
   action    String
   meta      Json?
   createdAt DateTime @default(now())
@@ -60,16 +68,21 @@ model AuditLog {
 }
 
 model Account {
-  id        String            @id @default(cuid())
-  user      User              @relation(fields: [userId], references: [id])
-  userId    String
-  type      AccountType       @default(CHECKING)
-  number    String            @unique
-  balance   Int               @default(0)
-  currency  String            @default("INR")
-  createdAt DateTime          @default(now())
-  txns      Transaction[]
-  externalTransfers ExternalTransfer[] // Added relation
+  id                String            @id @default(cuid())
+
+  userId            String
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type              AccountType       @default(CHECKING)
+  number            String            @unique
+  balance           BigInt            @default(0) @db.BigInt
+  currency          String            @default("INR")
+  createdAt         DateTime          @default(now())
+
+  txns              Transaction[]
+  externalTransfers ExternalTransfer[]
+
+  @@index([userId, createdAt])
 }
 
 model Beneficiary {
@@ -77,41 +90,51 @@ model Beneficiary {
   nickname      String
   accountNumber String
   bankName      String
+
   userId        String
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   createdAt     DateTime @default(now())
 
   @@index([userId])
 }
 
 model Transaction {
-  id          String   @id @default(cuid())
-  type        TxnType
-  amountCents Int
-  description String?
-  postedAt    DateTime @default(now())
-  accountId   String
-  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User     @relation("UserTransactions", fields: [userId], references: [id], onDelete: Cascade)
+  id               String     @id @default(cuid())
+  type             TxnType
+  amountCents      BigInt     @db.BigInt
+  description      String?
+  counterpartyName String?    // e.g., "userA" (who sent/received)
+  postedAt         DateTime   @default(now())
+
+  status           TxnStatus  @default(POSTED)
+  availableAt      DateTime?
+
+  accountId        String
+  account          Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  userId           String
+  user             User       @relation("UserTransactions", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([accountId])
   @@index([userId])
   @@index([postedAt])
+  @@index([status])
 }
 
-// NEW MODEL FOR EXTERNAL TRANSFERS
 model ExternalTransfer {
   id            String   @id @default(cuid())
   createdAt     DateTime @default(now())
-  amountCents   Int
+  amountCents   BigInt   @db.BigInt
   accountNumber String
   ifscCode      String
   recipientName String
-  account       Account  @relation(fields: [accountId], references: [id])
+
   accountId     String
-  user          User     @relation(fields: [userId], references: [id])
+  account       Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
   userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([accountId])
   @@index([userId])

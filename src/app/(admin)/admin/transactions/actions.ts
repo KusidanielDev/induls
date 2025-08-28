@@ -3,38 +3,48 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { TxnType } from "@prisma/client";
+import { TxnType, TxnStatus } from "@prisma/client";
 
-function toCents(input: string) {
-  const n = Number(String(input).replace(/[, ]/g, ""));
-  if (!Number.isFinite(n)) throw new Error("Invalid amount");
-  return Math.round(n * 100);
+/** Parse "2,500.50" -> bigint cents */
+function toCentsBig(input: string): bigint {
+  const s = String(input).trim().replace(/[, ]/g, "");
+  if (!/^-?\d+(\.\d{1,2})?$/.test(s)) {
+    throw new Error("Invalid amount");
+  }
+  const [intPart, decPart = ""] = s.split(".");
+  const cents = BigInt(intPart) * 100n + BigInt((decPart + "00").slice(0, 2));
+  return cents;
 }
 
+/** ------------------------------
+ *  BASIC ACTIONS (POSTED only)
+ *  ------------------------------ */
 export async function deposit(
   accountId: string,
   amountStr: string,
   description?: string
 ) {
   const { adminId } = await requireAdmin();
-  const cents = toCents(amountStr);
-  if (cents <= 0) throw new Error("Amount must be > 0");
+  const cents = toCentsBig(amountStr);
+  if (cents <= 0n) throw new Error("Amount must be > 0");
 
   await prisma.$transaction(async (db) => {
-    await db.account.update({
-      where: { id: accountId },
-      data: { balance: { increment: cents } },
-    });
     await db.transaction.create({
       data: {
         accountId,
         userId: adminId,
         type: TxnType.CREDIT,
         amountCents: cents,
-        description,
+        description: description || "Admin deposit",
+        status: TxnStatus.POSTED,
       },
     });
+    await db.account.update({
+      where: { id: accountId },
+      data: { balance: { increment: cents } },
+    });
   });
+
   revalidatePath("/admin/transactions");
 }
 
@@ -44,31 +54,26 @@ export async function withdraw(
   description?: string
 ) {
   const { adminId } = await requireAdmin();
-  const cents = toCents(amountStr);
-  if (cents <= 0) throw new Error("Amount must be > 0");
+  const cents = toCentsBig(amountStr);
+  if (cents <= 0n) throw new Error("Amount must be > 0");
 
   await prisma.$transaction(async (db) => {
-    const acc = await db.account.findUnique({
-      where: { id: accountId },
-      select: { balance: true },
-    });
-    if (!acc) throw new Error("Account not found");
-    if (acc.balance < cents) throw new Error("Insufficient funds");
-
-    await db.account.update({
-      where: { id: accountId },
-      data: { balance: { decrement: cents } },
-    });
     await db.transaction.create({
       data: {
         accountId,
         userId: adminId,
         type: TxnType.DEBIT,
         amountCents: cents,
-        description,
+        description: description || "Admin withdrawal",
+        status: TxnStatus.POSTED,
       },
     });
+    await db.account.update({
+      where: { id: accountId },
+      data: { balance: { decrement: cents } },
+    });
   });
+
   revalidatePath("/admin/transactions");
 }
 
@@ -78,48 +83,44 @@ export async function adjustment(
   description?: string
 ) {
   const { adminId } = await requireAdmin();
-  const signed = toCents(amountStr);
-  if (signed === 0) throw new Error("Amount cannot be zero");
+  const cents = toCentsBig(amountStr);
+  if (cents === 0n) throw new Error("Zero adjustment not allowed");
 
   await prisma.$transaction(async (db) => {
-    const acc = await db.account.findUnique({
-      where: { id: accountId },
-      select: { balance: true },
-    });
-    if (!acc) throw new Error("Account not found");
-
-    if (signed > 0) {
-      await db.account.update({
-        where: { id: accountId },
-        data: { balance: { increment: signed } },
-      });
+    if (cents > 0n) {
       await db.transaction.create({
         data: {
           accountId,
           userId: adminId,
           type: TxnType.CREDIT,
-          amountCents: signed,
-          description,
+          amountCents: cents,
+          description: description || "Admin credit adjustment",
+          status: TxnStatus.POSTED,
         },
       });
-    } else {
-      const abs = Math.abs(signed);
-      if (acc.balance < abs) throw new Error("Insufficient funds");
       await db.account.update({
         where: { id: accountId },
-        data: { balance: { decrement: abs } },
+        data: { balance: { increment: cents } },
       });
+    } else {
+      const abs = -cents;
       await db.transaction.create({
         data: {
           accountId,
           userId: adminId,
           type: TxnType.DEBIT,
           amountCents: abs,
-          description,
+          description: description || "Admin debit adjustment",
+          status: TxnStatus.POSTED,
         },
+      });
+      await db.account.update({
+        where: { id: accountId },
+        data: { balance: { decrement: abs } },
       });
     }
   });
+
   revalidatePath("/admin/transactions");
 }
 
@@ -128,36 +129,147 @@ export async function updateTransactionDate(
   iso: string
 ) {
   await requireAdmin();
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) throw new Error("Invalid date");
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) throw new Error("Invalid date");
+
   await prisma.transaction.update({
     where: { id: transactionId },
-    data: { postedAt: date },
+    data: { postedAt: d },
   });
+
   revalidatePath("/admin/transactions");
 }
 
 export async function deleteTransaction(transactionId: string) {
   await requireAdmin();
-  if (process.env.HARD_DELETE !== "true")
-    throw new Error("Hard delete disabled (set HARD_DELETE=true)");
 
   await prisma.$transaction(async (db) => {
-    const t = await db.transaction.findUnique({ where: { id: transactionId } });
+    const t = await db.transaction.findUnique({
+      where: { id: transactionId },
+      select: {
+        id: true,
+        accountId: true,
+        type: true,
+        amountCents: true,
+        status: true,
+      },
+    });
     if (!t) return;
 
-    if (t.type === TxnType.CREDIT) {
+    if (t.status === TxnStatus.POSTED) {
+      if (t.type === TxnType.CREDIT) {
+        await db.account.update({
+          where: { id: t.accountId },
+          data: { balance: { decrement: t.amountCents } },
+        });
+      } else {
+        await db.account.update({
+          where: { id: t.accountId },
+          data: { balance: { increment: t.amountCents } },
+        });
+      }
+    }
+
+    await db.transaction.delete({ where: { id: transactionId } });
+  });
+
+  revalidatePath("/admin/transactions");
+}
+
+/** ------------------------------
+ *  INCOMING + STATUS CONTROL
+ *  ------------------------------ */
+
+/** Create incoming (credit) as Pending or Posted.
+ *  Pending: shows but does NOT affect balance
+ *  Posted : shows and DOES affect balance
+ */
+export async function createIncoming(
+  accountId: string,
+  amountStr: string,
+  description: string,
+  status: "PENDING" | "POSTED",
+  availableAt?: string,
+  counterpartyName?: string
+) {
+  const { adminId } = await requireAdmin();
+  const cents = toCentsBig(amountStr);
+  if (cents <= 0n) throw new Error("Amount must be > 0");
+
+  const avail = availableAt ? new Date(availableAt) : undefined;
+  if (avail && Number.isNaN(avail.getTime()))
+    throw new Error("Invalid availableAt");
+
+  await prisma.$transaction(async (db) => {
+    const txn = await db.transaction.create({
+      data: {
+        accountId,
+        userId: adminId,
+        type: TxnType.CREDIT,
+        amountCents: cents,
+        description:
+          description ||
+          (counterpartyName
+            ? `Incoming from ${counterpartyName}`
+            : "Incoming credit"),
+        counterpartyName: counterpartyName || null,
+        status: status === "PENDING" ? TxnStatus.PENDING : TxnStatus.POSTED,
+        availableAt: avail,
+      },
+    });
+
+    if (txn.status === TxnStatus.POSTED) {
       await db.account.update({
-        where: { id: t.accountId },
-        data: { balance: { decrement: t.amountCents } },
-      });
-    } else if (t.type === TxnType.DEBIT) {
-      await db.account.update({
-        where: { id: t.accountId },
-        data: { balance: { increment: t.amountCents } },
+        where: { id: accountId },
+        data: { balance: { increment: cents } },
       });
     }
-    await db.transaction.delete({ where: { id: transactionId } });
+  });
+
+  revalidatePath("/admin/transactions");
+}
+
+/** Flip Pending <-> Posted for credits and maintain balance */
+export async function setTransactionStatus(
+  transactionId: string,
+  status: "PENDING" | "POSTED"
+) {
+  await requireAdmin();
+
+  await prisma.$transaction(async (db) => {
+    const t = await db.transaction.findUnique({
+      where: { id: transactionId },
+      select: {
+        id: true,
+        accountId: true,
+        type: true,
+        amountCents: true,
+        status: true,
+      },
+    });
+    if (!t) throw new Error("Transaction not found");
+    if (status === t.status) return;
+
+    if (t.type === TxnType.CREDIT) {
+      if (t.status === TxnStatus.PENDING && status === "POSTED") {
+        await db.account.update({
+          where: { id: t.accountId },
+          data: { balance: { increment: t.amountCents } },
+        });
+      } else if (t.status === TxnStatus.POSTED && status === "PENDING") {
+        await db.account.update({
+          where: { id: t.accountId },
+          data: { balance: { decrement: t.amountCents } },
+        });
+      }
+    }
+
+    await db.transaction.update({
+      where: { id: transactionId },
+      data: {
+        status: status === "PENDING" ? TxnStatus.PENDING : TxnStatus.POSTED,
+      },
+    });
   });
 
   revalidatePath("/admin/transactions");
