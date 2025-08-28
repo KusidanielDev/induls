@@ -34,10 +34,10 @@ function mask(amountCents: number, show: boolean) {
 
 export default function DashboardPage() {
   const { visible, toggle } = React.useContext(BalanceVisibilityContext);
-  const { data /*, error*/ } = useSWR("/api/me", fetcher, {
-    revalidateOnFocus: false, // 👈 prevents flicker when switching tabs
+  const { data } = useSWR("/api/me?take=50", fetcher, {
+    revalidateOnFocus: false,
   });
-  const loading = !data; // 👈 treat as loading until the first response arrives
+  const loading = !data;
 
   const user = data?.user;
   const accounts = data?.accounts ?? [];
@@ -170,7 +170,6 @@ export default function DashboardPage() {
                 </Grid>
               ))}
 
-              {/* 👇 show empty state only when NOT loading */}
               {!loading && accounts.length === 0 && (
                 <Grid item xs={12}>
                   <Typography variant="body2" sx={{ color: "#6b7280" }}>
@@ -255,47 +254,86 @@ export default function DashboardPage() {
               Recent Activity
             </Typography>
 
-            {/* 👇 Only show this when NOT loading */}
             {!loading && txns.length === 0 && (
               <Typography variant="body2" sx={{ color: "#6b7280" }}>
                 No transactions yet.
               </Typography>
             )}
 
-            {/* 👇 Only render rows when NOT loading */}
             {!loading &&
-              txns.slice(0, 8).map((t: any, idx: number) => (
-                <Box key={t.id ?? idx}>
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      py: 1,
-                    }}
-                  >
-                    <Box>
-                      <Typography sx={{ fontWeight: 600 }}>
-                        {t.description || "Transaction"}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: "#6b7280" }}>
-                        {/* If this ever causes hydration warnings, wrap span with suppressHydrationWarning */}
-                        {new Date(t.postedAt).toLocaleString()}
-                      </Typography>
-                    </Box>
-                    <Typography
+              txns.slice(0, 8).map((t: any, idx: number) => {
+                const isCredit = t.type === "CREDIT";
+                const isPending = isCredit && t.status === "PENDING";
+                const label =
+                  isCredit && t.counterpartyName
+                    ? `Incoming from ${t.counterpartyName}`
+                    : t.description || (isCredit ? "Credit" : "Debit");
+
+                return (
+                  <Box key={t.id ?? idx}>
+                    <Box
                       sx={{
-                        fontWeight: 800,
-                        color: t.type === "CREDIT" ? "green" : "inherit",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        py: 1,
                       }}
                     >
-                      {t.type === "CREDIT" ? "+" : "-"}{" "}
-                      {mask(t.amountCents, visible)}
-                    </Typography>
+                      <Box
+                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                      >
+                        <Box>
+                          <Typography sx={{ fontWeight: 600 }}>
+                            {label}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{ color: "#6b7280" }}
+                          >
+                            {new Date(t.postedAt).toLocaleString()}{" "}
+                            {t.accountNumber ? `• ${t.accountNumber}` : null}
+                          </Typography>
+                        </Box>
+
+                        {/* Pending pill for incoming credits */}
+                        {isPending && (
+                          <Chip
+                            size="small"
+                            label="Incoming • Pending"
+                            sx={{
+                              ml: 1,
+                              bgcolor: "#fef3c7",
+                              color: "#92400e",
+                              border: "1px solid #fde68a",
+                            }}
+                            title={
+                              t.availableAt
+                                ? `Funds pending. Expected ${new Date(
+                                    t.availableAt
+                                  ).toLocaleString()}`
+                                : "Funds pending"
+                            }
+                          />
+                        )}
+                      </Box>
+
+                      <Typography
+                        sx={{
+                          fontWeight: 800,
+                          color: isCredit
+                            ? isPending
+                              ? "#6b7280"
+                              : "green"
+                            : "inherit",
+                        }}
+                      >
+                        {isCredit ? "+" : "-"} {mask(t.amountCents, visible)}
+                      </Typography>
+                    </Box>
+                    {idx < Math.min(txns.length, 8) - 1 && <Divider />}
                   </Box>
-                  {idx < Math.min(txns.length, 8) - 1 && <Divider />}
-                </Box>
-              ))}
+                );
+              })}
           </Paper>
 
           <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
