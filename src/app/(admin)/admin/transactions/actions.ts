@@ -1,9 +1,11 @@
+// src/app/(admin)/admin/transactions/actions.ts
 "use server";
 
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { TxnType, TxnStatus } from "@prisma/client";
+import { assertNotFrozen } from "@/lib/account-guards";
 
 /** Parse "2,500.50" -> bigint cents */
 function toCentsBig(input: string): bigint {
@@ -32,6 +34,9 @@ export async function deposit(
   description?: string
 ) {
   await requireAdmin();
+  // ❄️ Freeze guard
+  await assertNotFrozen(accountId);
+
   const cents = toCentsBig(amountStr);
   if (cents <= 0n) throw new Error("Amount must be > 0");
   const ownerUserId = await getAccountOwnerUserId(accountId);
@@ -62,6 +67,9 @@ export async function withdraw(
   description?: string
 ) {
   await requireAdmin();
+  // ❄️ Freeze guard
+  await assertNotFrozen(accountId);
+
   const cents = toCentsBig(amountStr);
   if (cents <= 0n) throw new Error("Amount must be > 0");
   const ownerUserId = await getAccountOwnerUserId(accountId);
@@ -92,6 +100,9 @@ export async function adjustment(
   description?: string
 ) {
   await requireAdmin();
+  // ❄️ Freeze guard
+  await assertNotFrozen(accountId);
+
   const cents = toCentsBig(amountStr);
   if (cents === 0n) throw new Error("Zero adjustment not allowed");
   const ownerUserId = await getAccountOwnerUserId(accountId);
@@ -167,6 +178,9 @@ export async function deleteTransaction(transactionId: string) {
     if (!t) return;
 
     if (t.status === TxnStatus.POSTED) {
+      // ❄️ Freeze guard only when balance will change
+      await assertNotFrozen(t.accountId);
+
       if (t.type === TxnType.CREDIT) {
         await db.account.update({
           where: { id: t.accountId },
@@ -198,6 +212,9 @@ export async function createIncoming(
   counterpartyName?: string
 ) {
   await requireAdmin();
+  // ❄️ Freeze guard (block even creating pending when frozen)
+  await assertNotFrozen(accountId);
+
   const cents = toCentsBig(amountStr);
   if (cents <= 0n) throw new Error("Amount must be > 0");
   const ownerUserId = await getAccountOwnerUserId(accountId);
@@ -254,6 +271,14 @@ export async function setTransactionStatus(
     });
     if (!t) throw new Error("Transaction not found");
     if (status === t.status) return;
+
+    // When changing balance due to status flip, ensure not frozen
+    if (
+      (t.status === TxnStatus.PENDING && status === "POSTED") ||
+      (t.status === TxnStatus.POSTED && status === "PENDING")
+    ) {
+      await assertNotFrozen(t.accountId);
+    }
 
     if (t.type === TxnType.CREDIT) {
       if (t.status === TxnStatus.PENDING && status === "POSTED") {

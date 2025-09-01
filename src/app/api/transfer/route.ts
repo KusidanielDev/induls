@@ -1,8 +1,16 @@
 // src/app/api/transfer/route.ts
 export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { assertNotFrozen } from "@/lib/account-guards";
+
+/**
+ * NOTE about amounts:
+ * - Your schema uses BigInt for balances/amountCents.
+ * - We convert incoming `amount` (paise, number) -> BigInt for safe math.
+ */
 
 export async function POST(req: Request) {
   try {
@@ -11,17 +19,22 @@ export async function POST(req: Request) {
 
     console.log("Transfer request body:", body); // Debugging log
 
-    // Validate common parameters
+    // Common params (amount is PAISA as a number in your UI)
     const fromId = String(body?.fromId || "");
-    const amount = Number(body?.amount || 0); // paise
+    const amountNum = Number(body?.amount || 0); // paise
     const description = String(body?.description || "Transfer");
 
-    if (!fromId || amount <= 0) {
+    if (!fromId || !Number.isFinite(amountNum) || amountNum <= 0) {
       console.error("Invalid input - missing fromId or invalid amount");
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
-    // Handle internal transfer
+    // Convert to BigInt for safety with Prisma BigInt columns
+    const amount = BigInt(Math.round(amountNum));
+
+    // ─────────────────────────────────────────────────────────────
+    // INTERNAL TRANSFER: fromId -> toId (both owned by the same user)
+    // ─────────────────────────────────────────────────────────────
     if (body.toId) {
       const toId = String(body.toId);
 
@@ -33,9 +46,16 @@ export async function POST(req: Request) {
         );
       }
 
+      // Fetch accounts (must belong to same user)
       const [from, to] = await Promise.all([
-        prisma.account.findFirst({ where: { id: fromId, userId } }),
-        prisma.account.findFirst({ where: { id: toId, userId } }),
+        prisma.account.findFirst({
+          where: { id: fromId, userId },
+          select: { id: true, balance: true },
+        }),
+        prisma.account.findFirst({
+          where: { id: toId, userId },
+          select: { id: true, balance: true },
+        }),
       ]);
 
       if (!from || !to) {
@@ -46,6 +66,10 @@ export async function POST(req: Request) {
         );
       }
 
+      // ❄️ Freeze guards (block both directions)
+      await assertNotFrozen(fromId);
+      await assertNotFrozen(toId);
+
       if (from.balance < amount) {
         console.error("Insufficient funds");
         return NextResponse.json(
@@ -55,6 +79,7 @@ export async function POST(req: Request) {
       }
 
       await prisma.$transaction(async (tx) => {
+        // Update balances
         await tx.account.update({
           where: { id: fromId },
           data: { balance: { decrement: amount } },
@@ -63,6 +88,8 @@ export async function POST(req: Request) {
           where: { id: toId },
           data: { balance: { increment: amount } },
         });
+
+        // Create ledger entries
         await tx.transaction.create({
           data: {
             type: "DEBIT",
@@ -70,6 +97,7 @@ export async function POST(req: Request) {
             description,
             accountId: fromId,
             userId,
+            // status defaults to POSTED per your schema
           },
         });
         await tx.transaction.create({
@@ -85,8 +113,11 @@ export async function POST(req: Request) {
 
       return NextResponse.json({ ok: true });
     }
-    // Handle external transfer
-    else if (body.externalAccount) {
+
+    // ─────────────────────────────────────────────────────────────
+    // EXTERNAL TRANSFER: fromId -> externalAccount
+    // ─────────────────────────────────────────────────────────────
+    if (body.externalAccount) {
       const externalAccount = body.externalAccount;
       const accountNumber = String(externalAccount.accountNumber || "");
       const ifscCode = String(externalAccount.ifscCode || "");
@@ -100,7 +131,6 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
-
       if (accountNumber.length < 10 || ifscCode.length < 8) {
         console.error("Invalid account number or IFSC code");
         return NextResponse.json(
@@ -111,6 +141,7 @@ export async function POST(req: Request) {
 
       const from = await prisma.account.findFirst({
         where: { id: fromId, userId },
+        select: { id: true, balance: true },
       });
 
       if (!from) {
@@ -120,6 +151,9 @@ export async function POST(req: Request) {
           { status: 404 }
         );
       }
+
+      // ❄️ Freeze guard
+      await assertNotFrozen(fromId);
 
       if (from.balance < amount) {
         console.error("Insufficient funds for external transfer");
@@ -161,14 +195,19 @@ export async function POST(req: Request) {
       });
 
       return NextResponse.json({ ok: true });
-    } else {
-      console.error("Invalid transfer type");
-      return NextResponse.json(
-        { error: "Invalid transfer type" },
-        { status: 400 }
-      );
     }
+
+    // If neither internal nor external shape matched
+    console.error("Invalid transfer type");
+    return NextResponse.json(
+      { error: "Invalid transfer type" },
+      { status: 400 }
+    );
   } catch (e: any) {
+    if (e?.code === "ACCOUNT_FROZEN") {
+      console.error("Transfer blocked: account frozen");
+      return NextResponse.json({ error: "Account is frozen" }, { status: 403 });
+    }
     console.error("Transfer error:", e);
     return NextResponse.json(
       { error: e?.message || "Transfer failed" },

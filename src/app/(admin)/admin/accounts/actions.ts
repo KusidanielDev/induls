@@ -3,19 +3,33 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { AccountStatus } from "@prisma/client";
 
 export async function hardDeleteAccount(accountId: string) {
   await requireAdmin();
-
-  // If you kept cascade FKs, this is enough:
   await prisma.account.delete({ where: { id: accountId } });
+  revalidatePath("/admin/accounts");
+}
 
-  // If you DIDN'T enable cascade on ExternalTransfer, do it manually:
-  // await prisma.$transaction(async (tx) => {
-  //   await tx.externalTransfer.deleteMany({ where: { accountId } });
-  //   await tx.transaction.deleteMany({ where: { accountId } });
-  //   await tx.account.delete({ where: { id: accountId } });
-  // });
+export async function setAccountStatus(
+  accountId: string,
+  status: AccountStatus
+) {
+  const { adminId } = await requireAdmin();
+  if (!accountId) throw new Error("Missing accountId");
+
+  await prisma.account.update({
+    where: { id: accountId },
+    data: { status },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: adminId,
+      action: "ACCOUNT_STATUS_CHANGED",
+      meta: { accountId, status },
+    },
+  });
 
   revalidatePath("/admin/accounts");
 }

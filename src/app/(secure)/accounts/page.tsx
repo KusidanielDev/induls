@@ -2,6 +2,8 @@
 import Link from "next/link";
 import * as React from "react";
 import useSWR from "swr";
+import { FrozenNotice } from "@/components/FrozenNotice";
+
 import {
   Container,
   Typography,
@@ -104,6 +106,7 @@ function DetailsDialog({
                 {formatINRfromCents(account.balance, { locale: LOCALE })}
               </Typography>
             </Box>
+            <FrozenNotice status={account.status} compact />
             <Divider />
             <Box sx={{ display: "flex", justifyContent: "space-between" }}>
               <Typography sx={{ color: "#6b7280" }}>Interest Rate</Typography>
@@ -339,6 +342,7 @@ export default function AccountsPage() {
                   <Typography variant="h6" sx={{ fontWeight: 900 }}>
                     {maskINR(a.balance, visible, { locale: LOCALE })}
                   </Typography>
+                  <FrozenNotice status={a.status} compact />
                 </Box>
                 <Button
                   size="small"

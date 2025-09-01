@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import useSWR from "swr";
+import { FrozenNotice, AnyFrozenNotice } from "@/components/FrozenNotice";
+
 import {
   Container,
   Box,
@@ -88,9 +90,12 @@ export default function DashboardPage() {
                 <Typography variant="body2" sx={{ color: "#6b7280" }}>
                   Total Balance
                 </Typography>
+
                 <Typography variant="h5" sx={{ fontWeight: 900 }}>
                   {maskINR(totalCents, visible, { locale: LOCALE })}
                 </Typography>
+                {/* After your Total amount UI */}
+                <AnyFrozenNotice accounts={accounts} compact />
               </Box>
               <IconButton
                 onClick={toggle}
@@ -165,6 +170,8 @@ export default function DashboardPage() {
                           Balance:{" "}
                           {maskINR(a.balance, visible, { locale: LOCALE })}
                         </Typography>
+                        {/* ✅ frozen notice */}
+                        <FrozenNotice status={a.status} />
                       </Box>
                     </Box>
                   </Paper>

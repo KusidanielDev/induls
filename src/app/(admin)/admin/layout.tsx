@@ -26,6 +26,8 @@ export default function AdminLayout({
           <strong>Admin</strong>
           <a href="/admin">Dashboard</a>
           <a href="/admin/users">Users</a>
+          <a href="/admin/accounts">Accounts</a>
+
           <a href="/admin/transactions">Transactions</a>
           <a href="/api/auth/signout?callbackUrl=/login">Sign out</a>
         </nav>

@@ -8,6 +8,8 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // For Neon + Prisma migrate dev, uncomment and set a separate DB/branch:
+  // shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 enum AccountType {
@@ -36,6 +38,13 @@ enum UserStatus {
 enum TxnStatus {
   PENDING
   POSTED
+}
+
+/* ✅ NEW */
+enum AccountStatus {
+  ACTIVE
+  FROZEN
+  CLOSED
 }
 
 model User {
@@ -79,6 +88,9 @@ model Account {
   currency          String            @default("INR")
   createdAt         DateTime          @default(now())
 
+  /* ✅ Used by the freeze feature */
+  status            AccountStatus     @default(ACTIVE)
+
   txns              Transaction[]
   externalTransfers ExternalTransfer[]
 
@@ -104,7 +116,7 @@ model Transaction {
   type             TxnType
   amountCents      BigInt     @db.BigInt
   description      String?
-  counterpartyName String?    // e.g., "userA" (who sent/received)
+  counterpartyName String?
   postedAt         DateTime   @default(now())
 
   status           TxnStatus  @default(POSTED)
